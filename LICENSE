@@ -1,0 +1,31 @@
+PROPRIETARY PORTFOLIO LICENSE (ALL RIGHTS RESERVED)
+Copyright (c) 2026 Sajid Ahmed
+
+1. OWNERSHIP AND INTENT
+This software and all associated documentation files (the "Software") are the exclusive intellectual property of Sajid Ahmed. The Software is provided in a public GitHub repository for the sole purpose of professional portfolio review and recruitment evaluation.
+
+2. GRANT OF VIEWING RIGHTS
+By hosting this Software on GitHub, the Author acknowledges and grants the rights specified in the GitHub Terms of Service, including the right for users to view and "fork" the Software within the GitHub platform for personal, non-commercial use only.
+
+3. PROHIBITED USES
+Except as explicitly stated in Section 2, all other rights are strictly reserved. You may not:
+
+Redistribute: Copy, publish, or distribute the Software in any medium.
+
+Commercialise: Use the Software, or any portion thereof, for any commercial purpose or financial gain.
+
+Sublicense: Grant any rights to third parties to use the Software.
+
+Modify for Distribution: Create derivative works for the purpose of public or private distribution.
+
+4. ARTIFICIAL INTELLIGENCE AND MACHINE LEARNING RESTRICTION
+The Author expressly prohibits the use of this Software, including its source code, logic, and structure, for the following purposes:
+
+Training, fine-tuning, or validating machine learning or artificial intelligence models.
+
+Ingestion into Large Language Models (LLMs) or generative AI systems for the purpose of code generation or synthesis.
+
+Use as a dataset for any form of automated pattern recognition or data mining without a separate, written license agreement from the Author.
+
+5. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+
+/* Copyright (c) 2026 Sajid Ahmed */
+:root {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    line-height: 1.6;
+    font-weight: 400;
+
+    color-scheme: dark;
+    color: rgba(255, 255, 255, 0.87);
+    background-color: #000108;
+
+
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    background: radial-gradient(circle at center, #000108 0%, #000000 100%);
+    overflow-x: hidden;
+}
+
+
+h1,
+h2,
+h3 {
+    margin: 0;
+    font-family: 'Space Grotesk', sans-serif;
+    color: #ffffff;
+    letter-spacing: 1px;
+}
+
+h1 {
+    font-size: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+p {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.75);
+}

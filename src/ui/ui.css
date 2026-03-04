@@ -1,0 +1,302 @@
+/* Tactical Glassmorphism Classes */
+/* Copyright (c) 2026 Sajid Ahmed */
+.tactical-glass {
+  position: relative;
+  background: rgba(10, 15, 20, 0.2);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border: 1px solid rgba(0, 170, 255, 0.3);
+  border-radius: 2px;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5), 0 5px 15px rgba(0, 0, 0, 0.4);
+  font-family: 'IBM Plex Sans', sans-serif;
+  color: #e2e8f0;
+}
+
+/* UI Greebles using Pseudo-elements */
+.tactical-glass::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 3px;
+  height: 3px;
+  background-color: #00aaff;
+  box-shadow: 0 0 4px #00aaff;
+}
+
+.tactical-glass::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 3px;
+  height: 3px;
+  background-color: #ff5722;
+  box-shadow: 0 0 4px #ff5722;
+}
+
+.tactical-button {
+  cursor: pointer;
+  background: rgba(10, 15, 20, 0.5);
+  border: 1px solid rgba(0, 170, 255, 0.5);
+  color: #e2e8f0;
+  padding: 8px 16px;
+  border-radius: 2px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  outline: none;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+.tactical-button:hover {
+  border-color: #ff5722;
+  background: rgba(255, 87, 34, 0.1);
+  box-shadow: inset 0 0 8px rgba(255, 87, 34, 0.3), 0 0 8px rgba(255, 87, 34, 0.2);
+  color: #ff5722;
+}
+
+.tactical-button:active {
+  background: rgba(0, 243, 255, 0.2);
+  transform: translateY(1px);
+}
+
+.tactical-input,
+.tactical-select {
+  background: #000000;
+  border: 1px solid rgba(0, 170, 255, 0.3);
+  color: #00aaff;
+  border-radius: 2px;
+  padding: 4px 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.9rem;
+}
+
+select option {
+  background: #000000;
+  color: #00aaff;
+}
+
+/* Hardware Range Sliders */
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  width: 100%;
+  margin: 10px 0;
+}
+
+input[type=range]:focus {
+  outline: none;
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(0, 170, 255, 0.2);
+  border-radius: 0;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  height: 16px;
+  width: 8px;
+  border-radius: 0;
+  background: #00aaff;
+  cursor: pointer;
+  -webkit-appearance: none;
+  margin-top: -7px;
+  box-shadow: 0 0 5px rgba(0, 170, 255, 0.8);
+  border: 1px solid #1a1e24;
+}
+
+input[type=range]:focus::-webkit-slider-thumb {
+  background: #ff5722;
+  box-shadow: 0 0 8px rgba(255, 87, 34, 0.9);
+}
+
+/* Firefox Support */
+input[type=range]::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(0, 170, 255, 0.2);
+  border-radius: 0;
+}
+
+input[type=range]::-moz-range-thumb {
+  height: 16px;
+  width: 8px;
+  border-radius: 0;
+  background: #00aaff;
+  cursor: pointer;
+  box-shadow: 0 0 5px rgba(0, 170, 255, 0.8);
+  border: 1px solid #1a1e24;
+}
+
+/* Header Island */
+#header-island {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 10px 20px;
+  text-align: center;
+  pointer-events: none;
+}
+
+#header-island h1 {
+  color: #00aaff;
+  text-shadow: 0 0 8px rgba(0, 170, 255, 0.4);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+#header-island p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #a0c0d0;
+}
+
+#header-island a {
+  color: inherit;
+  text-decoration: none;
+  pointer-events: auto;
+  transition: color 0.2s ease;
+}
+
+#header-island a:hover {
+  color: #00aaff;
+}
+
+/* Control Island */
+#control-island {
+  position: fixed;
+  bottom: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 12px 32px;
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  min-width: 800px;
+  justify-content: center;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control-group label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0;
+}
+
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.slider-value {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.8rem;
+  color: #00aaff;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(0, 170, 255, 0.3);
+}
+
+select,
+input[type="number"] {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.control-group input[type="range"] {
+  width: 200px;
+}
+
+select:focus,
+input[type="number"]:focus {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.back-button {
+  margin-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  padding-left: 30px;
+}
+
+/* Telemetry Pill */
+#telemetry-pill {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  min-width: 250px;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.telemetry-label {
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.telemetry-value {
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+}
+
+.tel-healthy {
+  color: #4ade80 !important;
+  /* Green */
+  text-shadow: 0 0 5px rgba(74, 222, 128, 0.4) !important;
+}
+
+.tel-warning {
+  color: #fbbf24 !important;
+  /* Amber */
+  text-shadow: 0 0 5px rgba(251, 191, 36, 0.4) !important;
+}
+
+.tel-critical {
+  color: #f87171 !important;
+  /* Red */
+  text-shadow: 0 0 5px rgba(248, 113, 113, 0.4) !important;
+}

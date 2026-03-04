@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<!-- Copyright (c) 2026 Sajid Ahmed -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Galactic N-Body Simulation</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+
+</head>
+
+<body>
+    <!-- Header Island -->
+    <header id="header-island" class="tactical-glass">
+        <h1>Galactic N-Body Simulation</h1>
+        <p><a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank" rel="noopener noreferrer">©
+                Sajid Ahmed 2026</a></p>
+    </header>
+
+    <!-- Control Island -->
+    <nav id="control-island" class="tactical-glass">
+        <div class="control-group">
+            <label for="ui-engine">Physics Engine</label>
+            <select id="ui-engine" class="tactical-select">
+                <option value="brute">CPU: Brute Force</option>
+                <option value="barnes">CPU: Barnes-Hut</option>
+                <option value="webgpu">GPU: WebGPU</option>
+            </select>
+        </div>
+        <div class="control-group" id="ui-quadtree-group" style="display: none;">
+            <label>&nbsp;</label>
+            <div style="display: flex; align-items: center; height: 100%;">
+                <input type="checkbox" id="ui-show-grid" class="tactical-input" style="width: auto; margin-right: 5px;">
+                <label for="ui-show-grid"
+                    style="margin: 0; cursor: pointer; text-transform: none; color: white;">QuadTree</label>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="ui-stars">Stars</label>
+            <input type="number" id="ui-stars" class="tactical-input" min="1000" max="1000000" step="1000" value="5000">
+        </div>
+        <div class="control-group">
+            <div class="label-row">
+                <label for="ui-gravity">Gravity</label>
+                <span id="ui-gravity-value" class="slider-value">1.0</span>
+            </div>
+            <input type="range" id="ui-gravity" min="0.1" max="10.0" step="0.1" value="1.0">
+        </div>
+        <div class="control-group">
+            <div class="label-row">
+                <label for="ui-dark-matter">Dark Matter</label>
+                <span id="ui-dark-matter-value" class="slider-value">0.0</span>
+            </div>
+            <input type="range" id="ui-dark-matter" min="0.0" max="1000.0" step="10.0" value="0.0">
+        </div>
+        <div class="control-group">
+            <label>&nbsp;</label>
+            <button id="ui-pause" class="tactical-button">Pause</button>
+        </div>
+
+        <div class="control-group">
+            <label>&nbsp;</label>
+            <button id="ui-restart" class="tactical-button">Restart</button>
+        </div>
+        <div class="control-group back-button">
+            <label>&nbsp;</label>
+            <a href="index.html" class="tactical-button">Back</a>
+        </div>
+    </nav>
+
+    <canvas id="bg-canvas"
+        style="position: absolute; top: -10vh; left: -10vw; width: 120vw; height: 120vh; z-index: 0; pointer-events: none; transform-origin: center center; will-change: transform;"></canvas>
+    <canvas id="sim-canvas"></canvas>
+
+    <!-- Telemetry Pill -->
+    <div id="telemetry-pill" class="tactical-glass">
+        <div class="telemetry-row">
+            <span class="telemetry-label">FPS</span>
+            <span id="tel-fps" class="telemetry-value">--</span>
+        </div>
+        <div class="telemetry-row">
+            <span class="telemetry-label">GFLOPS</span>
+            <span id="tel-gflops" class="telemetry-value">--</span>
+        </div>
+        <div class="telemetry-row gpu-row" style="display: none;">
+            <span class="telemetry-label">GPU DISPATCH</span>
+            <span id="tel-gpu-dispatch" class="telemetry-value">-- ms</span>
+        </div>
+        <div class="telemetry-row gpu-row" style="display: none;">
+            <span class="telemetry-label">GPU MEMORY</span>
+            <span id="tel-gpu-mem" class="telemetry-value">-- MB</span>
+        </div>
+    </div>
+
+    <script type="module" src="/src/simulation.ts"></script>
+</body>
+
+</html>
