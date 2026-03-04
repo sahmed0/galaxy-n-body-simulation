@@ -1,7 +1,6 @@
 # Galactic N-Body Simulation
 
 ![Version](https://img.shields.io/badge/version-0.0.0-blue.svg)
-![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
 ![Copyright](https://img.shields.io/badge/copyright-2026_Sajid_Ahmed-red.svg)
 
 **[Live Demo](https://sahmed0.github.io/galaxy-n-body-simulation/) • [Documentation](https://github.com/sahmed0/galaxy-n-body-simulation.git)**
