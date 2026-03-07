@@ -23,6 +23,8 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 
 - **Multiple Physics Engines**: Choose between an $O(N^2)$ direct-sum CPU Brute Force engine, an $O(N \log N)$ CPU Barnes-Hut quadtree engine, and a highly parallelised GPU WebGPU Compute Shader engine.
 
+![Launch](public/launch.png)
+
 - **Active/Passive Computational Subsetting**: Simulates realistic mass distribution without quadratic overhead by simulating heavy, gravity-exerting "active" stars and lightweight "passive" stars.
 
 - **Symplectic Leapfrog Integration**: Ensures long-term orbital stability and energy conservation, vital for galactic dynamics.
@@ -37,9 +39,7 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 
 - **Retro-Futuristic Tactical Glass UI**: A visually stunning interface combining deep space aesthetics with functional and responsive controls.
 
-![Preview](public/preview.png)
-
-![Launch](public/launch.png)
+![Simulation](public/sim.png)
 
 ## Tech Stack
 
