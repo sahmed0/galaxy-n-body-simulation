@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 export default defineConfig({
-    base: '/',
+    base: './',
     build: {
         target: 'esnext', // Necessary for WebGPU and modern JS features
     },
