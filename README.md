@@ -1,9 +1,9 @@
 # Galactic N-Body Simulation
 
-![Version](https://img.shields.io/badge/version-0.0.0-blue.svg)
-![Copyright](https://img.shields.io/badge/copyright-2026_Sajid_Ahmed-red.svg)
+![Version](https://img.shields.io/badge/version-1.0.1-green.svg)
+![Copyright](https://img.shields.io/badge/copyright-2026_Sajid_Ahmed-blue.svg)
 
-**[Live Demo](https://sahmed0.github.io/galaxy-n-body-simulation/) • [Documentation](https://github.com/sahmed0/galaxy-n-body-simulation.git)**
+**[Live Demo](https://galaxy.sajidahmed.co.uk/) • [Documentation](https://github.com/sahmed0/galaxy-n-body-simulation.git)**
 
 A high-performance, real-time galactic N-body simulation leveraging TypeScript, Vite, and WebGPU to model stellar dynamics with computational astrophysics methodologies.
 
@@ -22,21 +22,24 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 ## Features
 
 - **Multiple Physics Engines**: Choose between an $O(N^2)$ direct-sum CPU Brute Force engine, an $O(N \log N)$ CPU Barnes-Hut quadtree engine, and a highly parallelised GPU WebGPU Compute Shader engine.
-  <br>*(Insert Architecture Selection UI Mockup here)* `![Engine Selection UI Placeholder](https://via.placeholder.com/600x300?text=Engine+Selection+UI)`
 
 - **Active/Passive Computational Subsetting**: Simulates realistic mass distribution without quadratic overhead by simulating heavy, gravity-exerting "active" stars and lightweight "passive" stars.
 
 - **Symplectic Leapfrog Integration**: Ensures long-term orbital stability and energy conservation, vital for galactic dynamics.
 
+![Leapfrog Integration Info](public/info.png)
+
 - **Isothermal Dark Matter Halo**: Implicitly integrates a dark matter potential to model the flat rotation curves of galaxies without the computational cost of simulating dark matter particles.
 
 - **Salpeter Initial Mass Function & H-R Colours**: Assigns stellar mass accurately according to the Salpeter IMF and correlates star colours roughly with the main sequence of the Hertzsprung-Russell diagram.
-  <br>*(Insert Colour Grading UI Mockup here)* `![Colour H-R UI Placeholder](https://via.placeholder.com/600x300?text=Star+Colour+Rendering)`
 
 - **High-Performance Web Worker Architecture**: Offloads CPU-bound physics to dedicated web workers using zero-copy `SharedArrayBuffer` memory allocations, preventing main-thread blocking.
 
 - **Retro-Futuristic Tactical Glass UI**: A visually stunning interface combining deep space aesthetics with functional and responsive controls.
-  <br>*(Insert Main Dashboard Mockup here)* `![Dashboard UI Placeholder](https://via.placeholder.com/800x400?text=Full+Simulation+Dashboard)`
+
+![Preview](public/preview.png)
+
+![Launch](public/launch.png)
 
 ## Tech Stack
 
