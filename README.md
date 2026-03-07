@@ -66,7 +66,7 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 ## Architecture
 
 ```text
-c:\Users\ahmed\OneDrive\Desktop\n-body\
+~/n-body/
 ├── package.json
 ├── vite.config.ts
 ├── index.html          # Application landing page
