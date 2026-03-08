@@ -1,7 +1,9 @@
 # Galactic N-Body Simulation
 
-![Version](https://img.shields.io/badge/version-1.0.1-green.svg)
-![Copyright](https://img.shields.io/badge/copyright-2026_Sajid_Ahmed-blue.svg)
+![Copyright](https://img.shields.io/badge/Copyright-2026_Sajid_Ahmed-limegreen.svg)
+![Vite](https://img.shields.io/badge/Vite-7.3.1-purple.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-blue.svg)
+![Engine](https://img.shields.io/badge/Engine-WebGPU-crimson.svg)
 
 **[Live Demo](https://galaxy.sajidahmed.co.uk/) • [Documentation](https://github.com/sahmed0/galaxy-n-body-simulation.git)**
 
@@ -164,19 +166,18 @@ Navigate to the local development server URL (usually `http://localhost:5173`). 
 - `npm run dev` - Starts the Vite development server.
 - `npm run build` - Compiles TypeScript and creates a production build.
 - `npm run preview` - Previews the production build locally.
+---
 
 ## License
 
 Copyright (c) 2026 Sajid Ahmed. **All Rights Reserved.**
 
-This repository is strictly for **portfolio review and recruitment purposes**.
+This repository is a **Proprietary Portfolio Project**.
 
-### Use Constraints:
-* **No Unauthorised Distribution:** You may not redistribute, sublicense, or sell any part of this source code.
-* **No Commercial Use:** This software may not be used for any commercial or production purposes.
-* **AI & Machine Learning Restriction:** Use of this source code, in whole or in part, for the purpose of training, fine-tuning, or validating machine learning or artificial intelligence models (including but not limited to LLMs and generative AI) is **strictly prohibited** without express written permission from the author.
-* **Viewing & Forking:** Permission is granted to view the source code and fork the repository on GitHub for the purpose of personal review only.
+While I am a strong supporter of Open Source Software, this specific codebase represents a significant personal investment of time and effort and is therefore provided for **recruitment evaluation only**.
 
-The software is provided **" as is "**, without warranty of any kind.
+* **Permitted:** Viewing, forking (within GitHub only), and local execution for review.
+* **Prohibited:** Modification, redistribution, commercial use, and AI/LLM training.
 
-*See the [LICENSE](LICENSE) file for the full legal text.*
+For the full legal terms, please see the [LICENSE](./LICENSE) file.
+
