@@ -1,31 +1,44 @@
-PROPRIETARY PORTFOLIO LICENSE (ALL RIGHTS RESERVED)
-Copyright (c) 2026 Sajid Ahmed
+PROPRIETARY PORTFOLIO LICENSE
+ALL RIGHTS RESERVED.
+NO PERMISSION FOR DISTRIBUTION, MODIFICATION, OR AI TRAINING.
+
+Copyright (c) 2026 SAJID AHMED
 
 1. OWNERSHIP AND INTENT
-This software and all associated documentation files (the "Software") are the exclusive intellectual property of Sajid Ahmed. The Software is provided in a public GitHub repository for the sole purpose of professional portfolio review and recruitment evaluation.
+This software, including all source code, logic, assets, documentation files, and associated data structures (collectively, the "Software" and "Database"), is the exclusive intellectual property of SAJID AHMED (the "Author"). 
 
-2. GRANT OF VIEWING RIGHTS
-By hosting this Software on GitHub, the Author acknowledges and grants the rights specified in the GitHub Terms of Service, including the right for users to view and "fork" the Software within the GitHub platform for personal, non-commercial use only.
+The Software is made publicly available on GitHub strictly for the purposes of professional portfolio review, recruitment evaluation, and technical demonstration. It is NOT Open Source software.
 
-3. PROHIBITED USES
-Except as explicitly stated in Section 2, all other rights are strictly reserved. You may not:
+2. LIMITED PERMISSIONS & GITHUB TERMS OF SERVICE
+By hosting this Software on GitHub, the Author acknowledges the mandatory rights granted under the GitHub Terms of Service for public repositories. Subject to those terms, the Author grants users a strictly limited, non-exclusive, non-transferable permission to:
+- View: Read the source code on the GitHub platform.
+- Fork: Create a "fork" of the repository strictly within the GitHub platform for personal, non-commercial review or bookmarking.
+- Clone/Download: Copy the Software to a local machine solely for the purpose of non-commercial execution, evaluation, and review.
 
-Redistribute: Copy, publish, or distribute the Software in any medium.
+3. RESTRICTIONS AND PROHIBITIONS
+Any use of the Software not explicitly granted in Section 2 is strictly prohibited. You may NOT:
+- Modify: Alter, change, or create derivative works from the Software for any purpose.
+- Redistribute: Copy, publish, host, or distribute the Software (or any portion of it) on any platform, medium, or website other than the original GitHub repository.
+- Commercialise: Use the Software, or any portion thereof, for any commercial purpose, financial gain, or as part of a for-profit service.
+- Sublicense: Sell, rent, lease, or grant any rights to third parties to use the Software.
 
-Commercialise: Use the Software, or any portion thereof, for any commercial purpose or financial gain.
+4. ASSERTION OF MORAL RIGHTS & DATABASE RIGHTS
+In accordance with Chapter IV of the Copyright, Designs and Patents Act 1988 (CDPA), the Author explicitly asserts their Moral Rights, including the right to be identified as the author of this work (Right of Paternity) and the right to object to any derogatory treatment of the Software (Right of Integrity). The Author furthermore asserts Database Rights over any structured data, JSON files, or proprietary data schemas contained within the Software.
 
-Sublicense: Grant any rights to third parties to use the Software.
+5. AI, MACHINE LEARNING, AND DATA MINING RESTRICTIONS
+The Author expressly withholds permission for this Software to be used for the development, training, or validation of artificial intelligence. You are strictly forbidden from:
+- Using the Software as training data for Machine Learning (ML) models, Large Language Models (LLMs), or any generative AI systems.
+- Using the Software for automated code synthesis, pattern recognition, or AI-assisted code generation.
+- Scraping or ingesting the Software into any database used for the commercial or non-commercial development of AI technologies.
 
-Modify for Distribution: Create derivative works for the purpose of public or private distribution.
+THIS SECTION SERVES AS AN EXPRESS, LEGALLY BINDING OPT-OUT OF ANY "FAIR USE," "TEXT AND DATA MINING," OR SIMILAR EXCEPTIONS PROVIDED UNDER UK, EU, OR INTERNATIONAL COPYRIGHT LAWS.
 
-4. ARTIFICIAL INTELLIGENCE AND MACHINE LEARNING RESTRICTION
-The Author expressly prohibits the use of this Software, including its source code, logic, and structure, for the following purposes:
+6. CONTRIBUTIONS AND COLLABORATION
+To protect the unilateral ownership of this portfolio:
+- 6.1 No Unsolicited Contributions: The Author does not accept unsolicited contributions, Pull Requests, or collaborative edits. This is a sole-authored project.
+- 6.2 Implied License for Submissions: Any person who, notwithstanding Section 6.1, submits code or content to this repository ("Contributor") retains their original copyright under UK law. However, by the act of submission, the Contributor grants the Author an irrevocable, perpetual, worldwide, royalty-free, and sub-licensable license to use, display, modify, and distribute that contribution as part of this Software.
+- 6.3 Formal Assignment: Full legal ownership of any contribution shall only transfer to the Author via a separate, written Contributor License Agreement (CLA) or Assignment of Copyright signed by both parties in accordance with Section 90 of the CDPA 1988.
+- 6.4 Right of Removal: The Author reserves the absolute right to reject, modify, or delete any contribution or revoke repository access at any time.
 
-Training, fine-tuning, or validating machine learning or artificial intelligence models.
-
-Ingestion into Large Language Models (LLMs) or generative AI systems for the purpose of code generation or synthesis.
-
-Use as a dataset for any form of automated pattern recognition or data mining without a separate, written license agreement from the Author.
-
-5. NO WARRANTY
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+7. NO WARRANTY AND LIMITATION OF LIABILITY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
