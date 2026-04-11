@@ -46,7 +46,7 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 - **Retro-Futuristic Tactical Glass UI**: A visually stunning interface combining deep space aesthetics with functional and responsive controls.
 
 <p align="center">
-  <img src="public/sim.png" alt="Simulation Preview" width="600">
+  <img src="public/sim.png" alt="Simulation Preview" width="800">
 </p>
 
 ## Tech Stack
