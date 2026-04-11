@@ -25,13 +25,17 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 
 - **Multiple Physics Engines**: Choose between an $O(N^2)$ direct-sum CPU Brute Force engine, an $O(N \log N)$ CPU Barnes-Hut quadtree engine, and a highly parallelised GPU WebGPU Compute Shader engine.
 
-![Launch](public/launch.png)
+<p align="center">
+  <img src="public/launch.png" alt="Landing Page Preview" width="600">
+</p>
 
 - **Active/Passive Computational Subsetting**: Simulates realistic mass distribution without quadratic overhead by simulating heavy, gravity-exerting "active" stars and lightweight "passive" stars.
 
 - **Symplectic Leapfrog Integration**: Ensures long-term orbital stability and energy conservation, vital for galactic dynamics.
 
-![Leapfrog Integration Info](public/info.png)
+<p align="center">
+  <img src="public/info.png" alt="Leapfrog Integration Info" width="600">
+</p>
 
 - **Isothermal Dark Matter Halo**: Implicitly integrates a dark matter potential to model the flat rotation curves of galaxies without the computational cost of simulating dark matter particles.
 
@@ -41,7 +45,9 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 
 - **Retro-Futuristic Tactical Glass UI**: A visually stunning interface combining deep space aesthetics with functional and responsive controls.
 
-![Simulation](public/sim.png)
+<p align="center">
+  <img src="public/sim.png" alt="Simulation Preview" width="600">
+</p>
 
 ## Tech Stack
 
@@ -52,12 +58,12 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 
 ## Key Decisions
 
-| Technology / Pattern | Decision Rationale |
-| :--- | :--- |
-| **WebGPU Compute Shaders** | Selected over WebGL for compute tasks due to its native support for storage buffers and compute pipelines, enabling heavily parallelised $O(N^2)$ gravity kernels. |
-| **SharedArrayBuffer IPC** | Used for CPU workers (Barnes-Hut, Brute Force) to bypass expensive memory-copy overheads when sending millions of coordinates between threads. |
+| Technology / Pattern          | Decision Rationale                                                                                                                                                      |
+| :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **WebGPU Compute Shaders**    | Selected over WebGL for compute tasks due to its native support for storage buffers and compute pipelines, enabling heavily parallelised $O(N^2)$ gravity kernels.      |
+| **SharedArrayBuffer IPC**     | Used for CPU workers (Barnes-Hut, Brute Force) to bypass expensive memory-copy overheads when sending millions of coordinates between threads.                          |
 | **Ping-Pong Buffering (GPU)** | Ensures race-condition-free reads/writes inside the shader. The vertex shader natively parses the output buffer directly, avoiding PCI-e bus transfers back to CPU RAM. |
-| **Leapfrog Integrator** | Chosen over Euler and Runge-Kutta. Crucial for long-term symplectic energy conservation across thousands of orbital periods. |
+| **Leapfrog Integrator**       | Chosen over Euler and Runge-Kutta. Crucial for long-term symplectic energy conservation across thousands of orbital periods.                                            |
 
 ## Challenges & Lessons
 
@@ -118,13 +124,14 @@ graph TD
 
     D -->|CPU Selected| I[Worker Bridge]:::physics
     I -.->|SharedArrayBuffer IPC| J[Web Worker]:::physics
-    
+
     J --> K[Barnes-Hut Engine]:::physics
     K -.-> L[QuadTree Spatial Partition]:::physics
     J --> M[Brute Force Engine]:::physics
 ```
 
 ## Getting Started
+
 - If you wish to install and use this repository locally, follow the instructions below:
 - **NOTE**: As per the Licence, you may only fork/clone this repository for personal usage and review purposes only, all commercial usage and unauthorised distribution is strictly prohibited.
 
@@ -166,9 +173,11 @@ Navigate to the local development server URL (usually `http://localhost:5173`). 
 - `npm run dev` - Starts the Vite development server.
 - `npm run build` - Compiles TypeScript and creates a production build.
 - `npm run preview` - Previews the production build locally.
+
 ---
 
 ## License
+
 ![Copyright](https://img.shields.io/badge/Copyright-2026_Sajid_Ahmed-brightgreen.svg)
 
 Copyright (c) 2026 Sajid Ahmed. **All Rights Reserved.**
@@ -177,7 +186,7 @@ This repository is a **Proprietary Project**.
 
 While I am a strong supporter of Open Source Software, this specific codebase represents a significant personal investment of time and effort and is therefore provided with the following restrictions:
 
-* **Permitted:** Viewing, forking (within GitHub only), and local execution for evaluation and personal, non-commercial usage only.
-* **Prohibited:** Modification, redistribution, commercial use, and AI/LLM training.
+- **Permitted:** Viewing, forking (within GitHub only), and local execution for evaluation and personal, non-commercial usage only.
+- **Prohibited:** Modification, redistribution, commercial use, and AI/LLM training.
 
 For the full legal terms, please see the [LICENSE](./LICENSE) file.
