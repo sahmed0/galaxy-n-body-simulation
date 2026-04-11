@@ -10,20 +10,20 @@
     <link rel="icon" type="image/png" sizes="32x32" href="favicon/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.png">
     <link rel="manifest" href="favicon/site.webmanifest">
-    <title>N-Body Galaxy Simulation</title>
-    <meta name="title" content="N-Body Galaxy Simulation">
+    <title>Galactic N-Body Simulation | Sajid Ahmed</title>
+    <meta name="title" content="Galactic N-Body Simulation">
     <meta name="description" content="A high-performance interactive galaxy simulation built with WebGPU and WGSL.">
 
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://galaxy.sajidahmed.co.uk/sim.html">
-    <meta property="og:title" content="N-Body Galaxy Simulation">
+    <meta property="og:title" content="Galactic N-Body Simulation">
     <meta property="og:description"
         content="Witness the gravity of thousands of stars in real-time using modern WebGPU technology.">
     <meta property="og:image" content="https://galaxy.sajidahmed.co.uk/preview.png">
 
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://galaxy.sajidahmed.co.uk/sim.html">
-    <meta property="twitter:title" content="N-Body Galaxy Simulation">
+    <meta property="twitter:title" content="Galactic N-Body Simulation">
     <meta property="twitter:description" content="Interactive galaxy simulation powered by WebGPU.">
     <meta property="twitter:image" content="https://galaxy.sajidahmed.co.uk/preview.png">
 </head>
@@ -35,13 +35,14 @@
 
     <!-- Header Island -->
     <header id="header-island" class="tactical-glass">
-        <h1>Galactic N-Body Simulation | Sajid Ahmed</h1>
+        <h1>Galactic N-Body Simulation</h1>
         <p><a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank" rel="noopener noreferrer">©
                 Sajid Ahmed 2026</a></p>
     </header>
 
     <!-- Control Island -->
     <nav id="control-island" class="tactical-glass">
+        <button id="ui-toggle-pin" class="tactical-button pin-button" title="Toggle UI Pin">📌</button>
         <div class="control-group">
             <label for="ui-engine">Physics Engine</label>
             <select id="ui-engine" class="tactical-select">

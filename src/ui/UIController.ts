@@ -85,37 +85,71 @@ export function setupUI(sim: SimulationManager) {
         await sim.restart();
     });
 
-    // Mobile Toggles logic
+    // Universal Toggles Logic
     const toggleTelemetryBtn = document.getElementById('ui-toggle-telemetry');
     const toggleControlsBtn = document.getElementById('ui-toggle-controls');
     const telemetryPill = document.getElementById('telemetry-pill');
     const controlIsland = document.getElementById('control-island');
+    const togglePinBtn = document.getElementById('ui-toggle-pin');
+    
+    let isPinned = window.innerWidth > 768;
+
+    const applyPinState = () => {
+        if (togglePinBtn) {
+            if (isPinned) {
+                togglePinBtn.classList.add('pinned');
+            } else {
+                togglePinBtn.classList.remove('pinned');
+            }
+        }
+    };
+
+    applyPinState();
+
+    if (isPinned && controlIsland) {
+        // By default on large displays, show controls
+        controlIsland.classList.add('ui-active');
+    }
+
+    if (isPinned && telemetryPill) {
+        telemetryPill.classList.add('ui-active');
+    }
+
+    if (togglePinBtn) {
+        togglePinBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isPinned = !isPinned;
+            applyPinState();
+        });
+    }
 
     if (toggleTelemetryBtn && telemetryPill && controlIsland) {
         toggleTelemetryBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            telemetryPill.classList.toggle('mobile-active');
-            // Close controls if opening telemetry
-            controlIsland.classList.remove('mobile-active');
+            telemetryPill.classList.toggle('ui-active');
         });
     }
 
     if (toggleControlsBtn && controlIsland && telemetryPill) {
         toggleControlsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            controlIsland.classList.toggle('mobile-active');
-            // Close telemetry if opening controls
-            telemetryPill.classList.remove('mobile-active');
+            controlIsland.classList.toggle('ui-active');
         });
     }
 
-    // Close overlays when clicking outside
+    // Close overlays when clicking canvas or outside
     document.addEventListener('click', (e) => {
+        if (isPinned) return;
+
         const target = e.target as HTMLElement;
+        if (toggleTelemetryBtn?.contains(target) || toggleControlsBtn?.contains(target)) {
+            return;
+        }
+
         if (telemetryPill && controlIsland) {
             if (!telemetryPill.contains(target) && !controlIsland.contains(target)) {
-                telemetryPill.classList.remove('mobile-active');
-                controlIsland.classList.remove('mobile-active');
+                telemetryPill.classList.remove('ui-active');
+                controlIsland.classList.remove('ui-active');
             }
         }
     });
