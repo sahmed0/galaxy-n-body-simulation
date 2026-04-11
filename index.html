@@ -1,679 +1,940 @@
-<!DOCTYPE html>
+<!doctype html>
 <!-- Copyright (c) 2026 Sajid Ahmed -->
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="coi-serviceworker.js"></script>
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="favicon/apple-touch-icon.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="favicon/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="favicon/favicon-16x16.png"
+    />
+    <link rel="manifest" href="favicon/site.webmanifest" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"
+    ></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
+      onload="
+        renderMathInElement(document.body, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '$', right: '$', display: false },
+          ],
+        })
+      "
+    ></script>
+    <title>Galactic N-Body Simulation | Sajid Ahmed</title>
+    <meta name="title" content="Galactic N-Body Simulation | Sajid Ahmed" />
+    <meta
+      name="description"
+      content="A high-performance interactive galaxy simulation built with WebGPU and WGSL."
+    />
 
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="coi-serviceworker.js"></script>
-  <link rel="apple-touch-icon" sizes="180x180" href="favicon/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="favicon/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.png">
-  <link rel="manifest" href="favicon/site.webmanifest">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-  <link
-    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
-    rel="stylesheet">
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
-    onload="renderMathInElement(document.body, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ] });"></script>
-  <title>Galactic N-Body Simulation | Sajid Ahmed</title>
-  <meta name="title" content="Galactic N-Body Simulation | Sajid Ahmed">
-  <meta name="description" content="A high-performance interactive galaxy simulation built with WebGPU and WGSL.">
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:url"
+      content="https://galaxy.sajidahmed.co.uk/index.html"
+    />
+    <meta
+      property="og:title"
+      content="Galactic N-Body Simulation | Sajid Ahmed"
+    />
+    <meta
+      property="og:description"
+      content="Witness the gravity of thousands of stars in real-time using modern WebGPU technology."
+    />
+    <meta
+      property="og:image"
+      content="https://galaxy.sajidahmed.co.uk/preview.png"
+    />
 
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://galaxy.sajidahmed.co.uk/index.html">
-  <meta property="og:title" content="Galactic N-Body Simulation | Sajid Ahmed">
-  <meta property="og:description"
-    content="Witness the gravity of thousands of stars in real-time using modern WebGPU technology.">
-  <meta property="og:image" content="https://galaxy.sajidahmed.co.uk/preview.png">
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta
+      property="twitter:url"
+      content="https://galaxy.sajidahmed.co.uk/index.html"
+    />
+    <meta
+      property="twitter:title"
+      content="Galactic N-Body Simulation | Sajid Ahmed"
+    />
+    <meta
+      property="twitter:description"
+      content="Interactive galaxy simulation powered by WebGPU."
+    />
+    <meta
+      property="twitter:image"
+      content="https://galaxy.sajidahmed.co.uk/preview.png"
+    />
 
-  <meta property="twitter:card" content="summary_large_image">
-  <meta property="twitter:url" content="https://galaxy.sajidahmed.co.uk/index.html">
-  <meta property="twitter:title" content="Galactic N-Body Simulation | Sajid Ahmed">
-  <meta property="twitter:description" content="Interactive galaxy simulation powered by WebGPU.">
-  <meta property="twitter:image" content="https://galaxy.sajidahmed.co.uk/preview.png">
+    <style>
+      /* Global Reset & Spacing */
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background-color: #05080f;
+        font-family: "IBM Plex Sans", sans-serif;
+        color: #e0e6ed;
+        user-select: none;
+      }
 
+      /* Fixed Background Canvas */
+      #bg-canvas {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 0 !important;
+        pointer-events: none !important;
+      }
 
-  <style>
-    /* Global Reset & Spacing */
-    body {
-      margin: 0;
-      min-height: 100vh;
-      overflow-y: auto;
-      overflow-x: hidden;
-      background-color: #05080f;
-      font-family: 'IBM Plex Sans', sans-serif;
-      color: #e0e6ed;
-      user-select: none;
-    }
+      /* Staggered Fade-in Animations */
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(1.5rem);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
-    /* Fixed Background Canvas */
-    #bg-canvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: 0 !important;
-      pointer-events: none !important;
-    }
+      /* Main Grid Layout */
+      .control-panel {
+        display: grid;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto repeat(4, auto);
+        gap: 1.5rem;
+        padding: 2rem 1.5rem;
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 40rem;
+        margin: 0 auto;
+        justify-items: center;
+        position: relative;
+        z-index: 10;
+      }
 
-    /* Staggered Fade-in Animations */
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(1.5rem); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+      .main-header,
+      .center-console,
+      .widget-tl,
+      .widget-tr,
+      .widget-bl,
+      .widget-br {
+        animation: fadeInUp 0.6s ease-out forwards;
+        opacity: 0;
+      }
 
-    /* Main Grid Layout */
-    .control-panel {
-      display: grid;
-      grid-template-columns: 1fr;
-      grid-template-rows: auto auto repeat(4, auto);
-      gap: 1.5rem;
-      padding: 2rem 1.5rem;
-      box-sizing: border-box;
-      width: 100%;
-      max-width: 40rem;
-      margin: 0 auto;
-      justify-items: center;
-      position: relative;
-      z-index: 10;
-    }
+      .main-header {
+        animation-delay: 0.1s;
+      }
+      .center-console {
+        animation-delay: 0.2s;
+      }
+      .widget-tl {
+        animation-delay: 0.3s;
+      }
+      .widget-tr {
+        animation-delay: 0.4s;
+      }
+      .widget-bl {
+        animation-delay: 0.5s;
+      }
+      .widget-br {
+        animation-delay: 0.6s;
+      }
 
-    .main-header, .center-console, .widget-tl, .widget-tr, .widget-bl, .widget-br {
-      animation: fadeInUp 0.6s ease-out forwards;
-      opacity: 0;
-    }
-    
-    .main-header { animation-delay: 0.1s; }
-    .center-console { animation-delay: 0.2s; }
-    .widget-tl { animation-delay: 0.3s; }
-    .widget-tr { animation-delay: 0.4s; }
-    .widget-bl { animation-delay: 0.5s; }
-    .widget-br { animation-delay: 0.6s; }
+      /* Main Header */
+      .main-header {
+        grid-row: 1;
+        width: 100%;
+        box-sizing: border-box;
+        background: linear-gradient(
+          135deg,
+          rgba(11, 13, 16, 0.5),
+          rgba(11, 13, 16, 0.2)
+        );
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 0.1rem solid rgba(255, 255, 255, 0.15);
+        border-radius: 0.5rem;
+        padding: 1rem 2rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.37);
+      }
 
-    /* Main Header */
-    .main-header {
-      grid-row: 1;
-      width: 100%;
-      box-sizing: border-box;
-      background: linear-gradient(135deg, rgba(11, 13, 16, 0.5), rgba(11, 13, 16, 0.2));
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      border: 0.1rem solid rgba(255, 255, 255, 0.15);
-      border-radius: 0.5rem;
-      padding: 1rem 2rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.37);
-    }
+      .main-header-title {
+        color: #00aaff;
+        font-size: 1.5rem;
+        font-weight: bold;
+        letter-spacing: 0.15rem;
+        text-transform: uppercase;
+        text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.8);
+        font-family: "Space Grotesk", sans-serif;
+        text-align: center;
+        margin: 0 0 0.25rem 0;
+      }
 
-    .main-header-title {
-      color: #00aaff;
-      font-size: 1.5rem;
-      font-weight: bold;
-      letter-spacing: 0.15rem;
-      text-transform: uppercase;
-      text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.8);
-      font-family: 'Space Grotesk', sans-serif;
-      text-align: center;
-      margin: 0 0 0.25rem 0;
-    }
+      .main-header-subtitle {
+        color: #a0c0d0;
+        font-size: 0.9rem;
+        letter-spacing: 0.05rem;
+        font-family: "IBM Plex Sans", sans-serif;
+        text-align: center;
+        margin: 0;
+      }
 
-    .main-header-subtitle {
-      color: #a0c0d0;
-      font-size: 0.9rem;
-      letter-spacing: 0.05rem;
-      font-family: 'IBM Plex Sans', sans-serif;
-      text-align: center;
-      margin: 0;
-    }
+      .main-header-subtitle a {
+        color: inherit;
+        text-decoration: none;
+        transition: color 0.2s ease;
+      }
 
-    .main-header-subtitle a {
-      color: inherit;
-      text-decoration: none;
-      transition: color 0.2s ease;
-    }
+      .main-header-subtitle a:hover {
+        color: #00aaff;
+      }
 
-    .main-header-subtitle a:hover {
-      color: #00aaff;
-    }
+      /* Center Launch Area */
+      .center-console {
+        grid-row: 2;
+        width: 100%;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem 0;
+      }
 
-    /* Center Launch Area */
-    .center-console {
-      grid-row: 2;
-      width: 100%;
-      box-sizing: border-box;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem 0;
-    }
+      .launch-button {
+        width: 15rem;
+        height: 15rem;
+        border-radius: 50%;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 170, 255, 0.3),
+          rgba(0, 80, 150, 0.1)
+        );
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 0.2rem solid rgba(255, 255, 255, 0.2);
+        box-shadow:
+          0 0.5rem 2rem rgba(0, 170, 255, 0.3),
+          inset 0 0 1rem rgba(0, 170, 255, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        cursor: pointer;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        text-decoration: none;
+      }
 
-    .launch-button {
-      width: 15rem;
-      height: 15rem;
-      border-radius: 50%;
-      background: linear-gradient(135deg, rgba(0, 170, 255, 0.3), rgba(0, 80, 150, 0.1));
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      border: 0.2rem solid rgba(255, 255, 255, 0.2);
-      box-shadow: 0 0.5rem 2rem rgba(0, 170, 255, 0.3), inset 0 0 1rem rgba(0, 170, 255, 0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      cursor: pointer;
-      overflow: hidden;
-      transition: all 0.3s ease;
-      text-decoration: none;
-    }
+      .launch-button:hover {
+        background: linear-gradient(
+          135deg,
+          rgba(0, 170, 255, 0.4),
+          rgba(0, 80, 150, 0.2)
+        );
+        box-shadow:
+          0 1rem 3rem rgba(0, 170, 255, 0.5),
+          inset 0 0 1.5rem rgba(0, 170, 255, 0.4);
+        transform: scale(1.02);
+        border: 0.2rem solid rgba(255, 255, 255, 0.3);
+      }
 
-    .launch-button:hover {
-      background: linear-gradient(135deg, rgba(0, 170, 255, 0.4), rgba(0, 80, 150, 0.2));
-      box-shadow: 0 1rem 3rem rgba(0, 170, 255, 0.5), inset 0 0 1.5rem rgba(0, 170, 255, 0.4);
-      transform: scale(1.02);
-      border: 0.2rem solid rgba(255, 255, 255, 0.3);
-    }
+      .launch-button:active {
+        transform: scale(0.95);
+        box-shadow:
+          0 0.5rem 1rem rgba(0, 170, 255, 0.4),
+          inset 0 0 2rem rgba(0, 170, 255, 0.6);
+      }
 
-    .launch-button:active {
-      transform: scale(0.95);
-      box-shadow: 0 0.5rem 1rem rgba(0, 170, 255, 0.4), inset 0 0 2rem rgba(0, 170, 255, 0.6);
-    }
+      .launch-button::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 1.2rem,
+            rgba(255, 255, 255, 0.1) 1.25rem
+          ),
+          repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 1.2rem,
+            rgba(255, 255, 255, 0.1) 1.25rem
+          );
+        z-index: 1;
+        pointer-events: none;
+      }
 
-    .launch-button::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background:
-        repeating-linear-gradient(0deg, transparent, transparent 1.2rem, rgba(255, 255, 255, 0.1) 1.25rem),
-        repeating-linear-gradient(90deg, transparent, transparent 1.2rem, rgba(255, 255, 255, 0.1) 1.25rem);
-      z-index: 1;
-      pointer-events: none;
-    }
+      .launch-text {
+        position: relative;
+        z-index: 3;
+        font-size: 2rem;
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.3rem;
+        text-shadow:
+          0 0 0.5rem rgba(0, 170, 255, 0.8),
+          0 0 1rem #00aaff;
+        font-family: "Space Grotesk", sans-serif;
+      }
 
-    .launch-text {
-      position: relative;
-      z-index: 3;
-      font-size: 2rem;
-      font-weight: 900;
-      color: #ffffff;
-      letter-spacing: 0.3rem;
-      text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.8), 0 0 1rem #00aaff;
-      font-family: 'Space Grotesk', sans-serif;
-    }
+      /* Vertical Widgets */
+      .corner-widget {
+        width: 100%;
+        box-sizing: border-box;
+        background: linear-gradient(
+          135deg,
+          rgba(11, 13, 16, 0.5),
+          rgba(11, 13, 16, 0.2)
+        );
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 0.1rem solid rgba(255, 255, 255, 0.15);
+        border-radius: 0.5rem;
+        box-shadow:
+          0 0.5rem 2rem rgba(0, 0, 0, 0.37),
+          inset 0 0 1rem rgba(0, 170, 255, 0.1);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        position: relative;
+        transition: all 0.2s ease;
+        overflow: hidden;
+        aspect-ratio: 4 / 1;
+        min-height: 8rem;
+      }
 
-    /* Vertical Widgets */
-    .corner-widget {
-      width: 100%;
-      box-sizing: border-box;
-      background: linear-gradient(135deg, rgba(11, 13, 16, 0.5), rgba(11, 13, 16, 0.2));
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      border: 0.1rem solid rgba(255, 255, 255, 0.15);
-      border-radius: 0.5rem;
-      box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.37), inset 0 0 1rem rgba(0, 170, 255, 0.1);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      position: relative;
-      transition: all 0.2s ease;
-      overflow: hidden;
-      aspect-ratio: 4 / 1;
-      min-height: 8rem;
-    }
+      .corner-widget::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 0.9rem,
+            rgba(255, 255, 255, 0.05) 1rem
+          ),
+          repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 0.9rem,
+            rgba(255, 255, 255, 0.05) 1rem
+          );
+        z-index: 1;
+        pointer-events: none;
+      }
 
-    .corner-widget::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background:
-        repeating-linear-gradient(0deg, transparent, transparent 0.9rem, rgba(255, 255, 255, 0.05) 1rem),
-        repeating-linear-gradient(90deg, transparent, transparent 0.9rem, rgba(255, 255, 255, 0.05) 1rem);
-      z-index: 1;
-      pointer-events: none;
-    }
+      .corner-widget:hover {
+        box-shadow:
+          0 0.5rem 2rem rgba(0, 170, 255, 0.2),
+          inset 0 0 1rem rgba(0, 170, 255, 0.3);
+        border-color: rgba(0, 170, 255, 0.5);
+        background: linear-gradient(
+          135deg,
+          rgba(11, 13, 16, 0.6),
+          rgba(11, 13, 16, 0.3)
+        );
+      }
 
-    .corner-widget:hover {
-      box-shadow: 0 0.5rem 2rem rgba(0, 170, 255, 0.2), inset 0 0 1rem rgba(0, 170, 255, 0.3);
-      border-color: rgba(0, 170, 255, 0.5);
-      background: linear-gradient(135deg, rgba(11, 13, 16, 0.6), rgba(11, 13, 16, 0.3));
-    }
+      .corner-widget:active {
+        transform: scale(0.98);
+      }
 
-    .corner-widget:active {
-      transform: scale(0.98);
-    }
+      /* Widget Vertical Row Order */
+      .widget-tl {
+        grid-row: 3;
+      }
+      .widget-tr {
+        grid-row: 4;
+      }
+      .widget-bl {
+        grid-row: 5;
+      }
+      .widget-br {
+        grid-row: 6;
+      }
 
-    /* Widget Vertical Row Order */
-    .widget-tl { grid-row: 3; }
-    .widget-tr { grid-row: 4; }
-    .widget-bl { grid-row: 5; }
-    .widget-br { grid-row: 6; }
+      .widget-label {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #ffffff;
+        text-transform: uppercase;
+        letter-spacing: 0.1rem;
+        text-shadow: 0 0 0.3rem rgba(0, 170, 255, 0.5);
+        z-index: 2;
+        text-align: center;
+        padding: 0 1rem;
+        font-family: "Space Grotesk", sans-serif;
+      }
 
-    .widget-label {
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: #ffffff;
-      text-transform: uppercase;
-      letter-spacing: 0.1rem;
-      text-shadow: 0 0 0.3rem rgba(0, 170, 255, 0.5);
-      z-index: 2;
-      text-align: center;
-      padding: 0 1rem;
-      font-family: 'Space Grotesk', sans-serif;
-    }
+      /* Greebles */
+      .greeble-bar {
+        position: absolute;
+        bottom: 0.8rem;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 60%;
+        height: 0.25rem;
+        background: transparent;
+        display: flex;
+        gap: 0.25rem;
+      }
 
-    /* Greebles */
-    .greeble-bar {
-      position: absolute;
-      bottom: 0.8rem;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 60%;
-      height: 0.25rem;
-      background: transparent;
-      display: flex;
-      gap: 0.25rem;
-    }
+      .greeble-indicator {
+        flex: 1;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 0.1rem;
+      }
 
-    .greeble-indicator {
-      flex: 1;
-      height: 100%;
-      background-color: rgba(255, 255, 255, 0.2);
-      border-radius: 0.1rem;
-    }
+      .greeble-indicator.active {
+        background-color: #00aaff;
+        box-shadow: 0 0 0.3rem #00aaff;
+      }
 
-    .greeble-indicator.active {
-      background-color: #00aaff;
-      box-shadow: 0 0 0.3rem #00aaff;
-    }
+      .greeble-indicator.amber {
+        background-color: #ff9900;
+        box-shadow: 0 0 0.3rem #ff9900;
+      }
 
-    .greeble-indicator.amber {
-      background-color: #ff9900;
-      box-shadow: 0 0 0.3rem #ff9900;
-    }
+      .screw {
+        position: absolute;
+        width: 0.5rem;
+        height: 0.5rem;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        box-shadow:
+          inset 0.05rem 0.05rem 0.1rem rgba(255, 255, 255, 0.2),
+          inset -0.05rem -0.05rem 0.1rem rgba(0, 0, 0, 0.5);
+      }
 
-    .screw {
-      position: absolute;
-      width: 0.5rem;
-      height: 0.5rem;
-      background-color: rgba(255, 255, 255, 0.1);
-      border-radius: 50%;
-      box-shadow: inset 0.05rem 0.05rem 0.1rem rgba(255, 255, 255, 0.2), inset -0.05rem -0.05rem 0.1rem rgba(0, 0, 0, 0.5);
-    }
+      .screw-tl {
+        top: 0.5rem;
+        left: 0.5rem;
+      }
+      .screw-tr {
+        top: 0.5rem;
+        right: 0.5rem;
+      }
+      .screw-bl {
+        bottom: 0.5rem;
+        left: 0.5rem;
+      }
+      .screw-br {
+        bottom: 0.5rem;
+        right: 0.5rem;
+      }
 
-    .screw-tl { top: 0.5rem; left: 0.5rem; }
-    .screw-tr { top: 0.5rem; right: 0.5rem; }
-    .screw-bl { bottom: 0.5rem; left: 0.5rem; }
-    .screw-br { bottom: 0.5rem; right: 0.5rem; }
+      /* Modal Overlay */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(5, 8, 15, 0.6);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        z-index: 100;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+      }
 
-    /* Modal Overlay */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(5, 8, 15, 0.6);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
-    }
+      .modal-overlay.active {
+        display: flex;
+      }
 
-    .modal-overlay.active {
-      display: flex;
-    }
+      /* Terminal Readout Window */
+      .terminal-box {
+        background: linear-gradient(
+          135deg,
+          rgba(10, 15, 30, 0.6),
+          rgba(10, 15, 30, 0.8)
+        );
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 0.1rem solid rgba(0, 170, 255, 0.3);
+        border-radius: 0.5rem;
+        width: 100%;
+        max-width: 50rem;
+        height: 80vh;
+        box-shadow:
+          0 1rem 3rem rgba(0, 0, 0, 0.5),
+          inset 0 0 1.5rem rgba(0, 170, 255, 0.2);
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
 
-    /* Terminal Readout Window */
-    .terminal-box {
-      background: linear-gradient(135deg, rgba(10, 15, 30, 0.6), rgba(10, 15, 30, 0.8));
-      backdrop-filter: blur(6px);
-      -webkit-backdrop-filter: blur(6px);
-      border: 0.1rem solid rgba(0, 170, 255, 0.3);
-      border-radius: 0.5rem;
-      width: 100%;
-      max-width: 50rem;
-      height: 80vh;
-      box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5), inset 0 0 1.5rem rgba(0, 170, 255, 0.2);
-      display: flex;
-      flex-direction: column;
-      position: relative;
-    }
+      .terminal-header {
+        background: rgba(0, 170, 255, 0.1);
+        border-bottom: 0.1rem solid rgba(0, 170, 255, 0.3);
+        padding: 1rem 1.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-radius: 0.5rem 0.5rem 0 0;
+      }
 
-    .terminal-header {
-      background: rgba(0, 170, 255, 0.1);
-      border-bottom: 0.1rem solid rgba(0, 170, 255, 0.3);
-      padding: 1rem 1.5rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-radius: 0.5rem 0.5rem 0 0;
-    }
+      .terminal-title {
+        color: #00aaff;
+        font-size: 1.2rem;
+        font-weight: bold;
+        letter-spacing: 0.1rem;
+        margin: 0;
+        text-transform: uppercase;
+        font-family: "Space Grotesk", sans-serif;
+        text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.5);
+      }
 
-    .terminal-title {
-      color: #00aaff;
-      font-size: 1.2rem;
-      font-weight: bold;
-      letter-spacing: 0.1rem;
-      margin: 0;
-      text-transform: uppercase;
-      font-family: 'Space Grotesk', sans-serif;
-      text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.5);
-    }
+      .close-button {
+        background: transparent;
+        border: 0.1rem solid rgba(255, 77, 77, 0.5);
+        color: #ff4d4d;
+        font-size: 1.2rem;
+        font-weight: bold;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 0.25rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
 
-    .close-button {
-      background: transparent;
-      border: 0.1rem solid rgba(255, 77, 77, 0.5);
-      color: #ff4d4d;
-      font-size: 1.2rem;
-      font-weight: bold;
-      width: 2rem;
-      height: 2rem;
-      border-radius: 0.25rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
+      .close-button:hover {
+        background: rgba(255, 77, 77, 0.2);
+        border-color: #ff4d4d;
+        box-shadow: 0 0 0.5rem rgba(255, 77, 77, 0.5);
+      }
 
-    .close-button:hover {
-      background: rgba(255, 77, 77, 0.2);
-      border-color: #ff4d4d;
-      box-shadow: 0 0 0.5rem rgba(255, 77, 77, 0.5);
-    }
+      .terminal-content {
+        flex: 1;
+        padding: 2rem;
+        overflow-y: auto;
+        color: #a0c0d0;
+        line-height: 1.6;
+        font-family: "IBM Plex Sans", sans-serif;
+      }
 
-    .terminal-content {
-      flex: 1;
-      padding: 2rem;
-      overflow-y: auto;
-      color: #a0c0d0;
-      line-height: 1.6;
-      font-family: 'IBM Plex Sans', sans-serif;
-    }
+      .terminal-content h2,
+      .terminal-content h3 {
+        font-family: "Space Grotesk", sans-serif;
+        color: #ffffff;
+        margin-top: 0;
+      }
 
-    .terminal-content h2,
-    .terminal-content h3 {
-      font-family: 'Space Grotesk', sans-serif;
-      color: #ffffff;
-      margin-top: 0;
-    }
+      .terminal-content h3 {
+        color: #00aaff;
+        font-size: 1.1rem;
+        border-bottom: 0.05rem solid rgba(0, 170, 255, 0.3);
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
+      }
 
-    .terminal-content h3 {
-      color: #00aaff;
-      font-size: 1.1rem;
-      border-bottom: 0.05rem solid rgba(0, 170, 255, 0.3);
-      padding-bottom: 0.5rem;
-      margin-bottom: 1rem;
-    }
+      .katex-display {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 1rem;
+        border-radius: 0.25rem;
+        border: 0.05rem solid rgba(100, 200, 255, 0.1);
+        overflow-x: auto;
+        margin: 1rem 0;
+      }
 
-    .katex-display {
-      background: rgba(0, 0, 0, 0.3);
-      padding: 1rem;
-      border-radius: 0.25rem;
-      border: 0.05rem solid rgba(100, 200, 255, 0.1);
-      overflow-x: auto;
-      margin: 1rem 0;
-    }
+      #data-store {
+        display: none;
+      }
 
-    #data-store {
-      display: none;
-    }
+      .terminal-content::-webkit-scrollbar {
+        width: 0.5rem;
+      }
 
-    .terminal-content::-webkit-scrollbar {
-      width: 0.5rem;
-    }
+      .terminal-content::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.2);
+        border-left: 0.05rem solid rgba(0, 170, 255, 0.1);
+      }
 
-    .terminal-content::-webkit-scrollbar-track {
-      background: rgba(0, 0, 0, 0.2);
-      border-left: 0.05rem solid rgba(0, 170, 255, 0.1);
-    }
+      .terminal-content::-webkit-scrollbar-thumb {
+        background: rgba(0, 170, 255, 0.5);
+        border-radius: 0.25rem;
+      }
+    </style>
+  </head>
 
-    .terminal-content::-webkit-scrollbar-thumb {
-      background: rgba(0, 170, 255, 0.5);
-      border-radius: 0.25rem;
-    }
-  </style>
-</head>
+  <body>
+    <!-- Existing Background Canvas -->
+    <canvas id="bg-canvas"></canvas>
 
-<body>
-  <!-- Existing Background Canvas -->
-  <canvas id="bg-canvas"></canvas>
+    <div class="control-panel">
+      <!-- Main Header -->
+      <div class="main-header">
+        <h1 class="main-header-title">Galactic N-Body Simulation</h1>
+        <h2 class="main-header-subtitle">
+          <a
+            href="https://github.com/sahmed0/galaxy-n-body-simulation.git"
+            target="_blank"
+            rel="noopener noreferrer"
+            >© Sajid Ahmed 2026</a
+          >
+        </h2>
+      </div>
 
-  <div class="control-panel">
+      <!-- Top Left Widget -->
+      <div class="corner-widget widget-tl" data-target="PHYS-01">
+        <div class="screw screw-tl"></div>
+        <div class="screw screw-tr"></div>
+        <div class="screw screw-bl"></div>
+        <div class="screw screw-br"></div>
+        <div class="widget-label">Computational Astrophysics</div>
+        <div class="greeble-bar">
+          <div class="greeble-indicator amber"></div>
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator active"></div>
+        </div>
+      </div>
 
-    <!-- Main Header -->
-    <div class="main-header">
-      <h1 class="main-header-title">Galactic N-Body Simulation</h1>
-      <h2 class="main-header-subtitle"><a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank"
-          rel="noopener noreferrer">© Sajid Ahmed
-          2026</a></h2>
-    </div>
+      <!-- Top Right Widget -->
+      <div class="corner-widget widget-tr" data-target="MATH-02">
+        <div class="screw screw-tl"></div>
+        <div class="screw screw-tr"></div>
+        <div class="screw screw-bl"></div>
+        <div class="screw screw-br"></div>
+        <div class="widget-label">Numerical Analysis</div>
+        <div class="greeble-bar">
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator amber"></div>
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator active"></div>
+        </div>
+      </div>
 
-    <!-- Top Left Widget -->
-    <div class="corner-widget widget-tl" data-target="PHYS-01">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">Computational Astrophysics</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator amber"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
+      <!-- Bottom Left Widget -->
+      <div class="corner-widget widget-bl" data-target="ALGO-03">
+        <div class="screw screw-tl"></div>
+        <div class="screw screw-tr"></div>
+        <div class="screw screw-bl"></div>
+        <div class="screw screw-br"></div>
+        <div class="widget-label">Algorithmic Architecture</div>
+        <div class="greeble-bar">
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator amber"></div>
+          <div class="greeble-indicator active"></div>
+        </div>
+      </div>
+
+      <!-- Bottom Right Widget -->
+      <div class="corner-widget widget-br" data-target="SYST-04">
+        <div class="screw screw-tl"></div>
+        <div class="screw screw-tr"></div>
+        <div class="screw screw-bl"></div>
+        <div class="screw screw-br"></div>
+        <div class="widget-label">High Performance Computing</div>
+        <div class="greeble-bar">
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator active"></div>
+          <div class="greeble-indicator amber"></div>
+        </div>
+      </div>
+
+      <!-- Center Launch Area -->
+      <div class="center-console">
+        <a href="sim.html" class="launch-button">
+          <span class="launch-text">LAUNCH</span>
+        </a>
       </div>
     </div>
 
-    <!-- Top Right Widget -->
-    <div class="corner-widget widget-tr" data-target="MATH-02">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">Numerical Analysis</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator amber"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="info-modal">
+      <div class="terminal-box">
+        <div class="terminal-header">
+          <h2 class="terminal-title" id="modal-title">SYS.INF // READOUT</h2>
+          <button class="close-button" id="modal-close">X</button>
+        </div>
+        <div class="terminal-content" id="modal-content">
+          <!-- Content injected via JS -->
+        </div>
       </div>
     </div>
 
-    <!-- Bottom Left Widget -->
-    <div class="corner-widget widget-bl" data-target="ALGO-03">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">Algorithmic Architecture</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator amber"></div>
-        <div class="greeble-indicator active"></div>
+    <!-- Data Store (Hidden) -->
+    <div id="data-store">
+      <div id="content-PHYS-01">
+        <h2>Computational Astrophysics</h2>
+
+        <h3>Newtonian Gravity</h3>
+        <p>
+          The core of the simulation integrates Newton's law of universal
+          gravitation across an N-body system. To prevent infinite forces and
+          numerical instability during close encounters (singularities), a
+          softening parameter $\epsilon$ is introduced.
+        </p>
+        <p>
+          The acceleration $\mathbf{a}_i$ of particle $i$ due to all other
+          particles $j$ is calculated as:
+        </p>
+        $$ \mathbf{a}_i = G \sum_{j \neq i} \frac{m_j}{(\|\mathbf{r}_{ij}\|^2 +
+        \epsilon^2)^{3/2}} \mathbf{r}_{ij} $$
+        <p>
+          Where $\mathbf{r}_{ij} = \mathbf{r}_j - \mathbf{r}_i$ is the distance
+          vector, $m_j$ is the mass of the interacting particle, and $G$ is the
+          gravitational constant.
+        </p>
+
+        <h3>Isothermal Dark Matter Halo</h3>
+        <p>
+          Visible matter alone cannot account for the observed flat rotation
+          curves of galaxies. To model this without the computational overhead
+          of millions of unseen particles, the simulation implements an implicit
+          Isothermal Dark Matter Halo force.
+        </p>
+        <p>
+          This adds an inward acceleration component directed towards the
+          galactic center, parameterized by:
+        </p>
+        $$ a_{dm} = -\frac{V_{flat}^2 \cdot r}{r^2 + \epsilon_{core}^2} $$
+        <p>
+          Where $V_{flat}$ represents the asymptotic circular velocity governed
+          by the dark matter strength, and $\epsilon_{core}$ is the core radius
+          of the halo.
+        </p>
+
+        <h3>Salpeter Initial Mass Function (IMF)</h3>
+        <p>
+          The mass distribution of stars in the simulation follows the realistic
+          Salpeter Initial Mass Function, rather than a uniform or arbitrary
+          assignment. The IMF describes the empirical distribution of initial
+          masses for a population of stars.
+        </p>
+        $$ \xi(M) = \xi_0 M^{-2.35} $$
+        <p>
+          This power-law distribution means low-mass stars are exponentially
+          more common than massive stars. In the simulation, this continuous
+          mass spectrum is dynamically sorted to differentiate between heavy
+          "active" stars (which exert gravity) and light "passive" stars (which
+          only receive gravity).
+        </p>
+
+        <h3>Stellar Color & The H-R Diagram</h3>
+        <p>
+          Star colors in the simulation are not randomly assigned; they are
+          correlated with a star's mass, mapped roughly to the main sequence of
+          the Hertzsprung-Russell (H-R) diagram.
+        </p>
+        <p>
+          More massive stars burn hotter and brighter, shifting their emission
+          spectra towards the blue end, while less massive stars are cooler and
+          emit primarily in the red spectrum. The simulation visually
+          distinguishes stars by rendering the most massive active bodies with
+          intense blue-white hues, grading down to yellow, orange, and deep red
+          for the numerous lightweight passive stars.
+        </p>
+      </div>
+
+      <div id="content-MATH-02">
+        <h2>Numerical Analysis</h2>
+
+        <h3>Symplectic Leapfrog Integration</h3>
+        <p>
+          Standard explicit Euler integration diverges rapidly for orbiting
+          bodies, violating the conservation of energy. To solve this, the
+          simulation utilizes a 2nd-order Symplectic Leapfrog Integrator. By
+          staggering the velocity and position updates by a half-step $\Delta t
+          / 2$, this method maintains long-term phase-space area and ensures
+          orbital stability over thousands of revolutions.
+        </p>
+        $$ \mathbf{v}_{i}(t + \frac{\Delta t}{2}) = \mathbf{v}_{i}(t -
+        \frac{\Delta t}{2}) + \mathbf{a}_{i}(t) \Delta t $$ $$ \mathbf{r}_{i}(t
+        + \Delta t) = \mathbf{r}_{i}(t) + \mathbf{v}_{i}(t + \frac{\Delta t}{2})
+        \Delta t $$
+
+        <p>
+          Leapfrog integration guarantees time-reversibility and reliable energy
+          conservation over long durations, making it a critical algorithm for
+          high-fidelity galactic dynamics where performance and accuracy must be
+          strictly balanced.
+        </p>
+      </div>
+
+      <div id="content-ALGO-03">
+        <h2>Algorithmic Architecture</h2>
+
+        <h3>Brute Force Gravity (O(N²))</h3>
+        <p>
+          The most accurate, yet computationally expensive, method for
+          calculating gravitational forces is the Direct N-Body (Brute Force)
+          approach. In this model, every particle calculates its gravitational
+          interaction with every other particle in the system.
+        </p>
+        <p>
+          While this ensures perfect accuracy, the time complexity scales
+          quadratically at $O(N^2)$. Simulating 10,000 particles requires
+          100,000,000 force calculations per frame, making it intractable for
+          macroscopic galactic simulations on typical hardware, but useful as a
+          baseline truth for smaller clusters.
+        </p>
+
+        <h3>Barnes-Hut & QuadTree (O(N log N))</h3>
+        <p>
+          To overcome quadratic scaling, the simulation implements the
+          Barnes-Hut algorithm. This spatial partitioning method divides the 2D
+          simulation space into a hierarchical QuadTree. Particles are
+          recursively grouped into hierarchical nodes (cells).
+        </p>
+        <p>
+          If a group of distant particles (a node) is sufficiently far away from
+          the particle being evaluated, the algorithm approximates the entire
+          group as a single center of mass rather than calculating individual
+          forces. This drastically reduces the time complexity to $O(N \log N)$,
+          enabling the real-time simulation of significantly larger particle
+          counts without a noticeable loss in macroscopic accuracy.
+        </p>
+
+        <h3>Active/Passive Computational Subsetting</h3>
+        <p>
+          Even with Barnes-Hut, rendering a visually dense galaxy of 100,000+
+          stars on CPU threads is challenging. To solve this, we introduce an
+          Active/Passive heuristic, splitting the galaxy into two mass-distinct
+          sets:
+        </p>
+        <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+          <li>
+            <strong>Active Set ($M_{heavy}$):</strong> The top percentage of
+            most massive stars. These stars are inserted into the QuadTree and
+            exert gravity on all other stars.
+          </li>
+          <li>
+            <strong>Passive Set ($M_{light}$):</strong> The vast majority of
+            low-mass stars. These stars possess negligible mass compared to the
+            galactic core. They do <em>not</em> exert gravity and are
+            <em>not</em> inserted into the QuadTree, but they do receive
+            gravitational pull from the active set.
+          </li>
+        </ul>
+        <p>
+          This hybrid approach effectively reduces the computational complexity
+          from $O(N \log N)$ to $O(N \cdot k)$ where $k \ll N$, allowing for
+          massive visual density while preserving accurate macroscopic galactic
+          dynamics.
+        </p>
+      </div>
+
+      <div id="content-SYST-04">
+        <h2>High Performance Computing</h2>
+
+        <h3>CPU Physics Engines & Threading</h3>
+        <p>
+          The simulation provides two distinct CPU-bound physics engines, each
+          optimized for different classical N-body algorithms.
+        </p>
+        <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+          <li>
+            <strong>Brute Force Engine:</strong> Implements an $O(N^2)$
+            direct-sum calculation using Velocity-Verlet integration. It
+            maximizes efficiency on a single thread by exploiting Newton's Third
+            Law (calculating the force between $i$ and $j$ once and applying it
+            to both), effectively halving the required calculations.
+          </li>
+          <li>
+            <strong>Barnes-Hut Engine:</strong> Utilizes a QuadTree data
+            structure to reduce the computational complexity to $O(N \log N)$.
+            This engine dynamically reconstructs the spatial tree every frame
+            and evaluates forces based on a distance threshold $\theta$.
+          </li>
+        </ul>
+        <p>
+          To prevent the physics calculations from blocking the main UI thread,
+          the engines are executed asynchronously. A
+          <code>WorkerBridge</code> spawns a dedicated Web Worker
+          (<code>physics.worker.ts</code>). Memory is not copied between
+          threads; instead, a <code>SharedArrayBuffer</code> is utilized to
+          provide zero-copy concurrent memory access. The main thread and the
+          worker synchronize state atomically using
+          <code>Atomics.wait</code> and <code>Atomics.notify</code>, ensuring
+          strict deterministic execution without memory locking overhead.
+        </p>
+
+        <h3>GPU Physics & Compute Architecture</h3>
+        <p>
+          For maximum performance and particle density, the simulation delegates
+          both physics integration and rendering to the Graphics Processing Unit
+          via the WebGPU API.
+        </p>
+        <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+          <li>
+            <strong>Compute Shaders:</strong> Gravitational forces and velocity
+            updates are calculated in parallel across thousands of GPU cores
+            using WGSL compute shaders (<code>shaders.wgsl</code>). The compute
+            pipeline employs a "ping-pong" buffer architecture: in frame $A$, it
+            reads state from Buffer 1 and writes the updated state to Buffer 2.
+            In frame $B$, it reverses the process. This guarantees that all
+            instances read from a consistent state without complex thread
+            synchronization.
+          </li>
+          <li>
+            <strong>Hardware Optimizations:</strong> The gravity kernel
+            leverages specialized hardware instructions, such as
+            <code>inverseSqrt</code>, to rapidly compute the inverse distance
+            required for the gravitational force vector, significantly
+            outperforming standard CPU math libraries.
+          </li>
+          <li>
+            <strong>Unified Render Pipeline:</strong> Unlike typical
+            implementations, the calculated particle positions and velocities
+            are never read back to the CPU memory (preventing costly PCI-e bus
+            transfers). Instead, the GPU's Render Pipeline directly reads the
+            compute shader's output buffer (Storage Buffer) as Instance Data.
+            Particles are drawn as heavily optimized instanced Quads, with
+            perfect circular appearances achieved via fragment shader pixel
+            discarding and mathematical gradients.
+          </li>
+        </ul>
       </div>
     </div>
 
-    <!-- Bottom Right Widget -->
-    <div class="corner-widget widget-br" data-target="SYST-04">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">High Performance Computing</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator amber"></div>
-      </div>
-    </div>
-
-    <!-- Center Launch Area -->
-    <div class="center-console">
-      <a href="sim.html" class="launch-button">
-        <span class="launch-text">LAUNCH</span>
-      </a>
-    </div>
-
-  </div>
-
-  <!-- Modal Overlay -->
-  <div class="modal-overlay" id="info-modal">
-    <div class="terminal-box">
-      <div class="terminal-header">
-        <h2 class="terminal-title" id="modal-title">SYS.INF // READOUT</h2>
-        <button class="close-button" id="modal-close">X</button>
-      </div>
-      <div class="terminal-content" id="modal-content">
-        <!-- Content injected via JS -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Data Store (Hidden) -->
-  <div id="data-store">
-    <div id="content-PHYS-01">
-      <h2>Computational Astrophysics</h2>
-
-      <h3>Newtonian Gravity</h3>
-      <p>The core of the simulation integrates Newton's law of universal gravitation across an N-body system. To prevent
-        infinite forces and numerical instability during close encounters (singularities), a softening parameter
-        $\epsilon$ is introduced.</p>
-      <p>The acceleration $\mathbf{a}_i$ of particle $i$ due to all other particles $j$ is calculated as:</p>
-      $$ \mathbf{a}_i = G \sum_{j \neq i} \frac{m_j}{(\|\mathbf{r}_{ij}\|^2 + \epsilon^2)^{3/2}} \mathbf{r}_{ij} $$
-      <p>Where $\mathbf{r}_{ij} = \mathbf{r}_j - \mathbf{r}_i$ is the distance vector, $m_j$ is the mass of the
-        interacting particle, and $G$ is the gravitational constant.</p>
-
-      <h3>Isothermal Dark Matter Halo</h3>
-      <p>Visible matter alone cannot account for the observed flat rotation curves of galaxies. To model this without
-        the computational overhead of millions of unseen particles, the simulation implements an implicit Isothermal
-        Dark Matter Halo force.</p>
-      <p>This adds an inward acceleration component directed towards the galactic center, parameterized by:</p>
-      $$ a_{dm} = -\frac{V_{flat}^2 \cdot r}{r^2 + \epsilon_{core}^2} $$
-      <p>Where $V_{flat}$ represents the asymptotic circular velocity governed by the dark matter strength, and
-        $\epsilon_{core}$ is the core radius of the halo.</p>
-
-      <h3>Salpeter Initial Mass Function (IMF)</h3>
-      <p>The mass distribution of stars in the simulation follows the realistic Salpeter Initial Mass Function, rather
-        than a uniform or arbitrary assignment. The IMF describes the empirical distribution of initial masses for a
-        population of stars.</p>
-      $$ \xi(M) = \xi_0 M^{-2.35} $$
-      <p>This power-law distribution means low-mass stars are exponentially more common than massive stars. In the
-        simulation, this continuous mass spectrum is dynamically sorted to differentiate between heavy "active" stars
-        (which exert gravity) and light "passive" stars (which only receive gravity).</p>
-
-      <h3>Stellar Color & The H-R Diagram</h3>
-      <p>Star colors in the simulation are not randomly assigned; they are correlated with a star's mass, mapped roughly
-        to the main sequence of the Hertzsprung-Russell (H-R) diagram.</p>
-      <p>More massive stars burn hotter and brighter, shifting their emission spectra towards the blue end, while less
-        massive stars are cooler and emit primarily in the red spectrum. The simulation visually distinguishes stars by
-        rendering the most massive active bodies with intense blue-white hues, grading down to yellow, orange, and deep
-        red for the numerous lightweight passive stars.</p>
-    </div>
-
-    <div id="content-MATH-02">
-      <h2>Numerical Analysis</h2>
-
-      <h3>Symplectic Leapfrog Integration</h3>
-      <p>Standard explicit Euler integration diverges rapidly for orbiting bodies, violating the conservation of energy.
-        To solve this, the simulation utilizes a 2nd-order Symplectic Leapfrog Integrator. By staggering the velocity
-        and position updates by a half-step $\Delta t / 2$, this method maintains long-term phase-space area and ensures
-        orbital stability over thousands of revolutions.</p>
-      $$ \mathbf{v}_{i}(t + \frac{\Delta t}{2}) = \mathbf{v}_{i}(t - \frac{\Delta t}{2}) + \mathbf{a}_{i}(t) \Delta t $$
-      $$ \mathbf{r}_{i}(t + \Delta t) = \mathbf{r}_{i}(t) + \mathbf{v}_{i}(t + \frac{\Delta t}{2}) \Delta t $$
-
-      <p>Leapfrog integration guarantees time-reversibility and reliable energy conservation over long
-        durations, making it a critical algorithm for high-fidelity galactic dynamics where performance and accuracy
-        must be strictly balanced.</p>
-    </div>
-
-    <div id="content-ALGO-03">
-      <h2>Algorithmic Architecture</h2>
-
-      <h3>Brute Force Gravity (O(N²))</h3>
-      <p>The most accurate, yet computationally expensive, method for calculating gravitational forces is the Direct
-        N-Body (Brute Force) approach. In this model, every particle calculates its gravitational interaction with every
-        other particle in the system.</p>
-      <p>While this ensures perfect accuracy, the time complexity scales quadratically at $O(N^2)$. Simulating 10,000
-        particles requires 100,000,000 force calculations per frame, making it intractable for macroscopic galactic
-        simulations on typical hardware, but useful as a baseline truth for smaller clusters.</p>
-
-      <h3>Barnes-Hut & QuadTree (O(N log N))</h3>
-      <p>To overcome quadratic scaling, the simulation implements the Barnes-Hut algorithm. This spatial partitioning
-        method divides the 2D simulation space into a hierarchical QuadTree. Particles are recursively grouped into
-        hierarchical nodes (cells).</p>
-      <p>If a group of distant particles (a node) is sufficiently far away from the particle being evaluated, the
-        algorithm approximates the entire group as a single center of mass rather than calculating individual forces.
-        This drastically reduces the time complexity to $O(N \log N)$, enabling the real-time simulation of
-        significantly larger particle counts without a noticeable loss in macroscopic accuracy.</p>
-
-      <h3>Active/Passive Computational Subsetting</h3>
-      <p>Even with Barnes-Hut, rendering a visually dense galaxy of 100,000+ stars on CPU threads is challenging. To
-        solve this, we introduce an Active/Passive heuristic, splitting the galaxy into two mass-distinct sets:</p>
-      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6;">
-        <li><strong>Active Set ($M_{heavy}$):</strong> The top percentage of most massive stars. These stars are
-          inserted into the QuadTree and exert gravity on all other stars.</li>
-        <li><strong>Passive Set ($M_{light}$):</strong> The vast majority of low-mass stars. These stars possess
-          negligible mass compared to the galactic core. They do <em>not</em> exert gravity and are <em>not</em>
-          inserted into the QuadTree, but they do receive gravitational pull from the active set.</li>
-      </ul>
-      <p>This hybrid approach effectively reduces the computational complexity from $O(N \log N)$ to $O(N \cdot k)$
-        where $k \ll N$, allowing for massive visual density while preserving accurate macroscopic galactic dynamics.
-      </p>
-    </div>
-
-    <div id="content-SYST-04">
-      <h2>High Performance Computing</h2>
-
-      <h3>CPU Physics Engines & Threading</h3>
-      <p>The simulation provides two distinct CPU-bound physics engines, each optimized for different classical N-body
-        algorithms.</p>
-      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6;">
-        <li><strong>Brute Force Engine:</strong> Implements an $O(N^2)$ direct-sum calculation using Velocity-Verlet
-          integration. It maximizes efficiency on a single thread by exploiting Newton's Third Law (calculating the
-          force between $i$ and $j$ once and applying it to both), effectively halving the required calculations.</li>
-        <li><strong>Barnes-Hut Engine:</strong> Utilizes a QuadTree data structure to reduce the computational
-          complexity to $O(N \log N)$. This engine dynamically reconstructs the spatial tree every frame and evaluates
-          forces based on a distance threshold $\theta$.</li>
-      </ul>
-      <p>To prevent the physics calculations from blocking the main UI thread, the engines are executed asynchronously.
-        A <code>WorkerBridge</code> spawns a dedicated Web Worker (<code>physics.worker.ts</code>). Memory is not copied
-        between threads; instead, a <code>SharedArrayBuffer</code> is utilized to provide zero-copy concurrent memory
-        access. The main thread and the worker synchronize state atomically using <code>Atomics.wait</code> and
-        <code>Atomics.notify</code>, ensuring strict deterministic execution without memory locking overhead.
-      </p>
-
-      <h3>GPU Physics & Compute Architecture</h3>
-      <p>For maximum performance and particle density, the simulation delegates both physics integration and rendering
-        to the Graphics Processing Unit via the WebGPU API.</p>
-      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6;">
-        <li><strong>Compute Shaders:</strong> Gravitational forces and velocity updates are calculated in parallel
-          across thousands of GPU cores using WGSL compute shaders (<code>shaders.wgsl</code>). The compute pipeline
-          employs a "ping-pong" buffer architecture: in frame $A$, it reads state from Buffer 1 and writes the updated
-          state to Buffer 2. In frame $B$, it reverses the process. This guarantees that all instances read from a
-          consistent state without complex thread synchronization.</li>
-        <li><strong>Hardware Optimizations:</strong> The gravity kernel leverages specialized hardware instructions,
-          such as <code>inverseSqrt</code>, to rapidly compute the inverse distance required for the gravitational force
-          vector, significantly outperforming standard CPU math libraries.</li>
-        <li><strong>Unified Render Pipeline:</strong> Unlike typical implementations, the calculated particle positions
-          and velocities are never read back to the CPU memory (preventing costly PCI-e bus transfers). Instead, the
-          GPU's Render Pipeline directly reads the compute shader's output buffer (Storage Buffer) as Instance Data.
-          Particles are drawn as heavily optimized instanced Quads, with perfect circular appearances achieved via
-          fragment shader pixel discarding and mathematical gradients.</li>
-      </ul>
-    </div>
-  </div>
-
-  <script type="module" src="/src/landing.ts"></script>
-</body>
-
+    <script type="module" src="/src/landing.ts"></script>
+  </body>
 </html>
