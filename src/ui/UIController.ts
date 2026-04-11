@@ -84,6 +84,41 @@ export function setupUI(sim: SimulationManager) {
     restartBtn.addEventListener('click', async () => {
         await sim.restart();
     });
+
+    // Mobile Toggles logic
+    const toggleTelemetryBtn = document.getElementById('ui-toggle-telemetry');
+    const toggleControlsBtn = document.getElementById('ui-toggle-controls');
+    const telemetryPill = document.getElementById('telemetry-pill');
+    const controlIsland = document.getElementById('control-island');
+
+    if (toggleTelemetryBtn && telemetryPill && controlIsland) {
+        toggleTelemetryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            telemetryPill.classList.toggle('mobile-active');
+            // Close controls if opening telemetry
+            controlIsland.classList.remove('mobile-active');
+        });
+    }
+
+    if (toggleControlsBtn && controlIsland && telemetryPill) {
+        toggleControlsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            controlIsland.classList.toggle('mobile-active');
+            // Close telemetry if opening controls
+            telemetryPill.classList.remove('mobile-active');
+        });
+    }
+
+    // Close overlays when clicking outside
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (telemetryPill && controlIsland) {
+            if (!telemetryPill.contains(target) && !controlIsland.contains(target)) {
+                telemetryPill.classList.remove('mobile-active');
+                controlIsland.classList.remove('mobile-active');
+            }
+        }
+    });
 }
 
 /**

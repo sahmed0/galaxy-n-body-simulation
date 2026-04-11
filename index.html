@@ -17,20 +17,20 @@
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"
     onload="renderMathInElement(document.body, { delimiters: [ {left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false} ] });"></script>
-  <title>N-Body Galaxy Simulation</title>
-  <meta name="title" content="N-Body Galaxy Simulation">
+  <title>Galactic N-Body Simulation | Sajid Ahmed</title>
+  <meta name="title" content="Galactic N-Body Simulation | Sajid Ahmed">
   <meta name="description" content="A high-performance interactive galaxy simulation built with WebGPU and WGSL.">
 
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://galaxy.sajidahmed.co.uk/index.html">
-  <meta property="og:title" content="N-Body Galaxy Simulation">
+  <meta property="og:title" content="Galactic N-Body Simulation | Sajid Ahmed">
   <meta property="og:description"
     content="Witness the gravity of thousands of stars in real-time using modern WebGPU technology.">
   <meta property="og:image" content="https://galaxy.sajidahmed.co.uk/preview.png">
 
   <meta property="twitter:card" content="summary_large_image">
   <meta property="twitter:url" content="https://galaxy.sajidahmed.co.uk/index.html">
-  <meta property="twitter:title" content="N-Body Galaxy Simulation">
+  <meta property="twitter:title" content="Galactic N-Body Simulation | Sajid Ahmed">
   <meta property="twitter:description" content="Interactive galaxy simulation powered by WebGPU.">
   <meta property="twitter:image" content="https://galaxy.sajidahmed.co.uk/preview.png">
 
@@ -428,6 +428,202 @@
     .terminal-content::-webkit-scrollbar-thumb {
       background: #00aaff;
       border-radius: 0;
+    }
+
+    /* Responsive Adjustments */
+    @media (max-width: 1024px) {
+      .control-panel {
+        gap: 15px;
+        padding: 15px;
+      }
+
+      .main-header {
+        padding: 5px 5ch;
+      }
+
+      .center-console {
+        min-width: 300px;
+      }
+
+      .launch-button {
+        width: 20rem;
+        height: 20rem;
+      }
+
+      .launch-text {
+        font-size: 2rem;
+      }
+
+      .corner-widget {
+        aspect-ratio: 10 / 16;
+        width: 100%;
+        height: auto;
+        max-height: 30rem; /* Prevent them from getting TOO huge on some tablets */
+      }
+    }
+
+    @media (max-width: 768px) {
+      .control-panel {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto 1fr 1fr auto;
+        gap: 15px;
+        padding: 15px;
+        height: 100vh;
+        min-height: unset;
+      }
+
+      .main-header {
+        grid-column: 1 / -1;
+        width: 90%;
+        padding: 5px 20px;
+      }
+
+      .corner-widget {
+        aspect-ratio: 10 / 16;
+        width: 100%;
+        height: auto;
+        max-height: 18rem; /* Prevent them from getting TOO huge on some tablets */
+      }
+
+      .widget-tl { grid-column: 1; grid-row: 2; }
+      .widget-tr { grid-column: 2; grid-row: 2; }
+      .widget-bl { grid-column: 1; grid-row: 4; }
+      .widget-br { grid-column: 2; grid-row: 4; }
+
+      .center-console {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        min-width: unset;
+        padding: 10px 0;
+      }
+
+      .launch-button {
+        width: 15rem;
+        height: 15rem;
+      }
+
+      .widget-label {
+        font-size: 1rem;
+      }
+
+      .terminal-box {
+        height: 90vh;
+      }
+
+      .modal-overlay {
+        padding: 10px;
+      }
+
+      .terminal-content {
+        padding: 15px;
+      }
+    }
+
+    @media (max-width: 600px) and (orientation: portrait) {
+      .control-panel {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto repeat(4, auto) 1fr;
+        gap: 10px;
+      }
+
+      .widget-tl { grid-column: 1; grid-row: 2; }
+      .widget-tr { grid-column: 1; grid-row: 3; }
+      .widget-bl { grid-column: 1; grid-row: 4; }
+      .widget-br { grid-column: 1; grid-row: 5; }
+
+      .center-console {
+        grid-row: 6;
+      }
+
+      .main-header-title {
+        font-size: 1.2rem;
+      }
+
+      .corner-widget {
+        aspect-ratio: 16 / 7;
+        width: 100%;
+        height: auto;
+        max-height: 13vh;
+      }
+
+      .launch-button {
+        width: 13rem;
+        height: 13rem;
+      }
+
+      .widget-label {
+        font-size: 1.1rem;
+      }
+
+      .greeble-indicator {
+        display: none;
+      }
+
+      .greeble-indicator:nth-child(-n+2) {
+        display: block;
+      }
+    }
+
+    @media (orientation: landscape) and (max-height: 500px) {
+      .control-panel {
+        grid-template-columns: 1fr auto 1fr;
+        grid-template-rows: auto 1fr 1fr;
+        gap: 10px;
+        padding: 10px;
+        height: 100vh;
+      }
+
+      .main-header {
+        grid-column: 1 / -1;
+        width: 100%;
+        padding: 4px;
+        border-width: 1px;
+      }
+
+      .main-header-title {
+        font-size: 1rem;
+      }
+
+      .main-header-subtitle {
+        font-size: 0.7rem;
+      }
+
+      .corner-widget {
+        aspect-ratio: 16 / 10;
+        width: 100%;
+        max-height: 120px;
+      }
+
+      .widget-tl { grid-column: 1; grid-row: 2; }
+      .widget-tr { grid-column: 3; grid-row: 2; }
+      .widget-bl { grid-column: 1; grid-row: 3; }
+      .widget-br { grid-column: 3; grid-row: 3; }
+
+      .center-console {
+        grid-column: 2;
+        grid-row: 2 / 4;
+        min-width: 120px;
+      }
+
+      .launch-button {
+        width: 120px;
+        height: 120px;
+        border-width: 4px;
+      }
+
+      .launch-text {
+        font-size: 1.2rem;
+      }
+
+      .widget-label {
+        font-size: 0.75rem;
+        padding: 0 5px;
+      }
+
+      .screw {
+        width: 4px;
+        height: 4px;
+      }
     }
   </style>
 </head>

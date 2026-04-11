@@ -187,8 +187,10 @@ input[type=range]::-moz-range-thumb {
   display: flex;
   gap: 24px;
   align-items: center;
-  min-width: 800px;
+  min-width: 80vw;
+  max-width: 80vw;
   justify-content: center;
+  overflow: hidden;
 }
 
 .control-group {
@@ -260,7 +262,8 @@ input[type="number"]:focus {
   font-family: 'IBM Plex Sans', sans-serif;
   font-size: 0.85rem;
   letter-spacing: 0.5px;
-  min-width: 250px;
+  min-width: 20vw;
+  max-width: 50vw;
   transition: all 0.3s ease;
   pointer-events: none;
 }
@@ -299,4 +302,121 @@ input[type="number"]:focus {
   color: #f87171 !important;
   /* Red */
   text-shadow: 0 0 5px rgba(248, 113, 113, 0.4) !important;
+}
+
+/* Mobile Toggles */
+.mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 3vh;
+  width: 3rem;
+  height: 3rem;
+  z-index: 200;
+  font-size: 1.5rem;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 15px rgba(0, 170, 255, 0.4);
+}
+
+#ui-toggle-telemetry {
+  left: 10vw;
+}
+
+#ui-toggle-controls {
+  right: 15vw;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 1180px), (orientation: landscape) and (max-height: 600px) {
+  #header-island {
+    display: none;
+  }
+
+  .mobile-toggle {
+    display: flex;
+  }
+
+  #control-island, #telemetry-pill {
+    display: none; /* Hidden by default on mobile/tablet/landscape */
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+    width: 80vw;
+    max-width: 80vw;
+    height: auto;
+    max-height: 90vh;
+    overflow-y: auto;
+    touch-action: pan-y; /* Allow vertical scrolling inside the panel */
+    border-radius: 4px;
+    padding: 16px;
+    gap: 12px;
+    flex-wrap: nowrap;
+    flex-direction: column;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.9), 0 0 20px rgba(0, 170, 255, 0.4);
+    background: rgba(8, 12, 16, 0.98);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(0, 170, 255, 0.4);
+  }
+
+  /* When active, show the panels */
+  #control-island.mobile-active, 
+  #telemetry-pill.mobile-active {
+    display: flex;
+  }
+
+  #control-island {
+    justify-content: flex-start;
+  }
+
+  .control-group {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: unset;
+  }
+
+  .control-group input[type="range"] {
+    width: 100%;
+  }
+
+  .back-button {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    width: 100%;
+    margin-top: 5px;
+  }
+
+  #telemetry-pill {
+    padding: 15px;
+    min-width: unset;
+    font-size: 0.9rem;
+  }
+
+  #telemetry-pill .telemetry-row {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(0, 170, 255, 0.1);
+  }
+
+  #telemetry-pill .telemetry-row:last-child {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 480px) {
+  #control-island, #telemetry-pill {
+    width: 80vw;
+    padding: 15px;
+  }
+  
+  .mobile-toggle {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+  }
 }
