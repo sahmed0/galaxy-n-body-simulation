@@ -8,6 +8,12 @@ export default defineConfig({
     base: './',
     build: {
         target: 'esnext', // Necessary for WebGPU and modern JS features
+        rollupOptions: {
+            input: {
+                main: resolve(__dirname, 'index.html'),
+                sim: resolve(__dirname, 'sim.html'),
+            },
+        },
     },
     plugins: [
         {
@@ -35,13 +41,5 @@ export default defineConfig({
     },
     worker: {
         format: 'es',
-    },
-    build: {
-        rollupOptions: {
-            input: {
-                main: resolve(__dirname, 'index.html'),
-                sim: resolve(__dirname, 'sim.html'),
-            },
-        },
     },
 });
