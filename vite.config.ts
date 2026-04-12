@@ -32,6 +32,9 @@ export default defineConfig({
             'Cross-Origin-Opener-Policy': 'same-origin',
             'Cross-Origin-Embedder-Policy': 'require-corp',
         },
+        allowedHosts: [
+            'knelt-reapply-capably.ngrok-free.dev', // ngrok url for mobile testing
+        ],
     },
     preview: {
         headers: {
