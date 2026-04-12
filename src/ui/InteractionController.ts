@@ -12,14 +12,15 @@ export function setupInteractions(sim: SimulationManager) {
     let lastMouseX = 0;
     let lastMouseY = 0;
 
-    window.addEventListener('mousedown', (e) => {
+    window.addEventListener('pointerdown', (e) => {
+        console.log('Tough/Mouse Target:', e.target); // Check if this is a canvas
         if ((e.target as HTMLElement).tagName !== 'CANVAS') return;
         isPanning = true;
         lastMouseX = e.clientX;
         lastMouseY = e.clientY;
     });
 
-    window.addEventListener('mousemove', (e) => {
+    window.addEventListener('pointermove', (e) => {
         if (!isPanning) return;
 
         const dx = e.clientX - lastMouseX;
@@ -33,7 +34,7 @@ export function setupInteractions(sim: SimulationManager) {
         lastMouseY = e.clientY;
     });
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('pointerup', () => {
         isPanning = false;
     });
 
