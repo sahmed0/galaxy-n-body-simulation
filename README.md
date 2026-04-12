@@ -1,4 +1,4 @@
-# Galactic N-Body Simulation
+# Galactic N-Body Simulation (N > 100,000 particles)
 
 ![Copyright](https://img.shields.io/badge/Copyright-2026_Sajid_Ahmed-limegreen.svg)
 ![Vite](https://img.shields.io/badge/Vite-7.3.1-purple.svg)
@@ -43,7 +43,7 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 
 - **High-Performance Web Worker Architecture**: Offloads CPU-bound physics to dedicated web workers using zero-copy `SharedArrayBuffer` memory allocations, preventing main-thread blocking.
 
-- **Retro-Futuristic Tactical Glass UI**: A visually stunning interface combining deep space aesthetics with functional and responsive controls.
+- **Tactical Glass UI**: A visually stunning interface combining deep space aesthetics with functional and responsive controls, optimised for desktop and mobile displays, including multi-touch handling.
 
 <p align="center">
   <img src="public/sim.png" alt="Simulation Preview" width="800">
