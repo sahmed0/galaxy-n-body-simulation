@@ -222,10 +222,10 @@ input[type=range]:focus::-moz-range-thumb {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 1000;
-  width: 80vw;
-  max-width: 35rem;
+  width: 60vw;
+  max-width: 75vw;
   height: auto;
-  max-height: 90vh;
+  max-height: 60vh;
   overflow-y: auto;
   touch-action: pan-y;
   padding: 3rem 2rem 2rem; 
@@ -392,6 +392,6 @@ input[type="number"]:focus {
 }
 
 /* Hide header title on small phones, the toggles are enough */
-@media (max-width: 768px) {
+@media (max-width: 768px) or (max-height: 768px) {
   #header-island { display: none; }
 }
