@@ -218,17 +218,17 @@ input[type=range]:focus::-moz-range-thumb {
 #control-island {
   display: none; 
   position: fixed;
-  top: 50%;
+  top: 50%; /* Anchor below toggles */
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 1000;
-  width: 60vw;
-  max-width: 75vw;
+  width: auto;
+  min-width: 16rem;
+  max-width: calc(100vw - 3rem);
   height: auto;
-  max-height: 60vh;
+  max-height: 70vh;
   overflow-y: auto;
-  touch-action: pan-y;
-  padding: 3rem 2rem 2rem; 
+  padding: 2rem 1.5rem 1.5rem; 
   gap: 1rem;
   flex-direction: column;
 }
@@ -321,12 +321,13 @@ input[type="number"]:focus {
 #telemetry-pill {
   display: none;
   position: fixed;
-  top: 25%;
+  top: 25%; /* Anchor below toggles */
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 1000;
   width: auto;
-  max-width: 35rem;
+  min-width: 12rem;
+  max-width: calc(100vw - 3rem);
   flex-direction: column;
   padding: 1rem;
 }
@@ -368,8 +369,9 @@ input[type="number"]:focus {
 /* Desktop/Tablet Override for Side Panels */
 @media (min-width: 769px) {
   #control-island {
+    top: 50%;
     left: 1.5rem;
-    transform: translate(0, -50%);
+    transform: translateY(-50%);
     width: auto;
     min-width: 15rem;
     max-width: 15rem;
@@ -379,9 +381,10 @@ input[type="number"]:focus {
   }
 
   #telemetry-pill {
+    top: 25%;
     left: auto;
     right: 1.5rem;
-    transform: translate(0, -50%);
+    transform: translateY(-50%);
     width: auto;
     min-width: 12rem;
     max-width: 12rem;
