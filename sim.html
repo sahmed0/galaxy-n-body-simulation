@@ -10,7 +10,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="favicon/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.png">
     <link rel="manifest" href="favicon/site.webmanifest">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=settings" />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=settings" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@kiwicarbon/assets/dist/kiwi.css" />
     <title>Galactic N-Body Simulation | Sajid Ahmed</title>
     <meta name="title" content="Galactic N-Body Simulation">
     <meta name="description" content="A high-performance interactive galaxy simulation built with WebGPU and WGSL.">
@@ -32,14 +35,8 @@
 <body>
     <!-- Mobile Toggles -->
     <button id="ui-toggle-telemetry" class="mobile-toggle tactical-glass" title="Toggle Telemetry">i</button>
-    <button id="ui-toggle-controls" class="mobile-toggle tactical-glass" title="Toggle Controls"><span class="material-symbols-outlined">settings</span></button>
-
-    <!-- Header Island -->
-    <header id="header-island" class="tactical-glass">
-        <h1>Galactic N-Body Simulation</h1>
-        <p><a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank" rel="noopener noreferrer">©
-                Sajid Ahmed 2026</a></p>
-    </header>
+    <button id="ui-toggle-controls" class="mobile-toggle tactical-glass" title="Toggle Controls"><span
+            class="material-symbols-outlined">settings</span></button>
 
     <!-- Control Island -->
     <nav id="control-island" class="tactical-glass">
@@ -98,6 +95,7 @@
 
     <!-- Telemetry Pill -->
     <div id="telemetry-pill" class="tactical-glass">
+        <h1>Galactic N-Body Simulation</h1>
         <div class="telemetry-row">
             <span class="telemetry-label">FPS</span>
             <span id="tel-fps" class="telemetry-value">--</span>
@@ -113,6 +111,12 @@
         <div class="telemetry-row gpu-row" style="display: none;">
             <span class="telemetry-label">GPU MEMORY</span>
             <span id="tel-gpu-mem" class="telemetry-value">-- MB</span>
+        </div>
+        <div id="sim-info">
+            <a href="https://sajidahmed.co.uk" target="_blank" rel="noopener"><i class="kiwi-logo"></i></a>
+            <a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank" rel="noopener"><i
+                    class="fab fa-github"></i></a>
+            <p>© Sajid Ahmed 2026</p>
         </div>
     </div>
 
