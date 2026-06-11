@@ -68,7 +68,11 @@ export class BarnesHutEngine implements PhysicsEngine {
         const vx = this.state.velocityX;
         const vy = this.state.velocityY;
         const mass = this.state.mass;
-        const massThreshold = params.massThreshold || 0;
+        // When active/passive is disabled, every body participates in the tree
+        // (full N-body). Otherwise only bodies at/above the mass threshold are
+        // inserted, so sub-threshold bodies act as massless test particles.
+        // Masses are strictly positive, so -Infinity admits all of them.
+        const massThreshold = params.useActivePassive ? (params.massThreshold || 0) : -Infinity;
 
         // --- Leapfrog Step ---
         // 1. Rebuild QuadTree (at time t)

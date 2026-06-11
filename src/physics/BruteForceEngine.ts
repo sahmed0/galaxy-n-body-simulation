@@ -6,7 +6,11 @@ import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types
 
 /**
  * Handles the physics simulation for the N-body system.
- * Uses a brute-force O(N^2) gravity kernel and Velocity-Verlet integration.
+ * Uses a brute-force O(N^2) gravity kernel and kick-drift leapfrog integration
+ * (symplectic): `v += a*dt; x += v*dt`, where the initial conditions stagger the
+ * velocity half a step ahead of the position so the scheme is 2nd-order and
+ * energy-stable. The half-step offset assumes a fixed dt; if dt changes at
+ * runtime the velocities must be re-staggered (see SimulationManager.softResetVelocities).
  */
 export class BruteForceEngine implements PhysicsEngine {
     private state!: PhysicsState;

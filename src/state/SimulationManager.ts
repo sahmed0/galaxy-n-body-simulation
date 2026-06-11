@@ -48,6 +48,12 @@ export class SimulationManager {
     frames = 0;
     lastTelemetryUpdate = 0;
 
+    // Fixed-timestep accumulator: decouples simulation speed from display refresh
+    // rate so the physics advances at the same wall-clock rate on 60/120/144 Hz.
+    private lastFrameTime = 0;
+    private accumulator = 0;
+    private static readonly MAX_SUBSTEPS = 5;
+
     /**
      * Callback triggered periodically to report simulation performance metrics.
      * @param fps - The calculated frames per second over the last telemetry interval.
@@ -164,8 +170,6 @@ export class SimulationManager {
                 tempActiveCount++;
             }
 
-            this.params.activeCount = tempActiveCount;
-
             const rawDistSq = p.dist * p.dist;
             const softenedDistSq = rawDistSq + this.params.softening * this.params.softening;
 
@@ -173,7 +177,7 @@ export class SimulationManager {
             const dmAccMag = (this.params.dmStrength * this.params.dmStrength * p.dist) / (rawDistSq + this.params.dmCoreRadius * this.params.dmCoreRadius);
             const totalAccMag = newtonianAccMag + dmAccMag;
 
-            const velocity = Math.sqrt(totalAccMag * p.dist) * (0.95 + Math.random() * 0.2);
+            const velocity = Math.sqrt(totalAccMag * p.dist) * (0.9 + Math.random() * 0.2);
 
             const vtx = (-this.state.positionY[i] / p.dist) * velocity;
             const vty = (this.state.positionX[i] / p.dist) * velocity;
@@ -184,10 +188,18 @@ export class SimulationManager {
             this.state.velocityX[i] = vtx + ax * (this.params.dt / 2);
             this.state.velocityY[i] = vty + ay * (this.params.dt / 2);
         }
+
+        // The active set is the index range [0, activeCount). Particle 0 is the
+        // central core, so it occupies one slot; add 1 to the count of qualifying
+        // heavy stars (indices 1..tempActiveCount) so none are demoted to passive.
+        this.params.activeCount = tempActiveCount + 1;
     }
 
     /**
-     * Partially resets particle velocities based on current positions to maintain orbital mechanics.
+     * Resets particle velocities to (near-)circular orbits based on current positions.
+     * Also re-applies the leapfrog half-step offset (a*dt/2) using the *current* dt,
+     * so this MUST be called after any runtime change to params.dt to keep the
+     * symplectic integrator's velocity correctly staggered half a step ahead.
      */
     softResetVelocities() {
         if (!this.state) return;
@@ -205,7 +217,7 @@ export class SimulationManager {
             const dmAccMag = (this.params.dmStrength * this.params.dmStrength * dist) / (rawDistSq + this.params.dmCoreRadius * this.params.dmCoreRadius);
             const totalAccMag = newtonianAccMag + dmAccMag;
 
-            const velocity = Math.sqrt(totalAccMag * dist) * (0.95 + Math.random() * 0.2);
+            const velocity = Math.sqrt(totalAccMag * dist) * (0.9 + Math.random() * 0.2);
             const vtx = (-this.state.positionY[i] / dist) * velocity;
             const vty = (this.state.positionX[i] / dist) * velocity;
 
@@ -292,6 +304,8 @@ export class SimulationManager {
      */
     startLoop() {
         this.lastTelemetryUpdate = performance.now();
+        this.lastFrameTime = 0;
+        this.accumulator = 0;
         this.loop();
     }
 
@@ -316,6 +330,8 @@ export class SimulationManager {
             (this.renderer as any).state = this.state;
         }
 
+        this.lastFrameTime = 0;
+        this.accumulator = 0;
         this.loop();
     }
 
@@ -324,6 +340,14 @@ export class SimulationManager {
      * Also calculates standard telemetry data like frame rates.
      */
     loop = () => {
+        // --- Frame timing: accumulate real elapsed time for fixed-timestep stepping ---
+        const now = performance.now();
+        if (this.lastFrameTime === 0) this.lastFrameTime = now;
+        let frameSeconds = (now - this.lastFrameTime) / 1000;
+        this.lastFrameTime = now;
+        // Clamp to avoid a "spiral of death" after a tab stall, breakpoint, or alt-tab.
+        if (frameSeconds > 0.1) frameSeconds = 0.1;
+
         this.renderer.camera.update();
 
         const bgCanvas = document.getElementById('bg-canvas');
@@ -338,38 +362,51 @@ export class SimulationManager {
             bgCanvas.style.transform = `translate(${bgX}px, ${bgY}px) scale(${bgScale})`;
         }
 
-        if (!this.params.isPaused) {
-            this.renderer.massThreshold = this.params.massThreshold;
-            this.renderer.showQuadTree = this.params.shouldShowQuadTree;
+        const isGpu = this.activeEngineStr === 'gpu' && !!this.webGpuEngine;
 
-            if (this.activeEngineStr === 'gpu' && this.webGpuEngine) {
-                this.params.cameraZoom = this.renderer.camera.zoom;
-                this.params.cameraX = this.renderer.camera.x;
-                this.params.cameraY = this.renderer.camera.y;
-                this.params.cameraTilt = this.renderer.camera.tilt;
-                this.webGpuEngine.update(this.params.dt, this.params);
-            } else {
-                this.engine.update(this.params.dt, this.params);
-                if (this.params.engineType === 'barnes') {
-                    this.renderer.quadTree = (this.engine as BarnesHutEngine).root || null;
-                } else {
-                    this.renderer.quadTree = null;
-                }
-                this.renderer.render();
-            }
-        } else {
-            if (this.activeEngineStr === 'cpu') {
-                this.renderer.render();
-            } else if (this.activeEngineStr === 'gpu' && this.webGpuEngine) {
-                this.params.cameraZoom = this.renderer.camera.zoom;
-                this.params.cameraX = this.renderer.camera.x;
-                this.params.cameraY = this.renderer.camera.y;
-                this.params.cameraTilt = this.renderer.camera.tilt;
-                this.webGpuEngine.update(0, this.params);
-            }
+        this.renderer.massThreshold = this.params.massThreshold;
+        this.renderer.showQuadTree = this.params.shouldShowQuadTree;
+
+        // Keep GPU camera uniforms in sync every frame (needed while paused too).
+        if (isGpu) {
+            this.params.cameraZoom = this.renderer.camera.zoom;
+            this.params.cameraX = this.renderer.camera.x;
+            this.params.cameraY = this.renderer.camera.y;
+            this.params.cameraTilt = this.renderer.camera.tilt;
         }
 
-        const now = performance.now();
+        // --- Physics: advance in fixed dt increments proportional to real time ---
+        // This keeps the simulation evolving at the same wall-clock rate regardless
+        // of the display refresh rate, while preserving the integrator's fixed dt.
+        if (!this.params.isPaused) {
+            this.accumulator += frameSeconds;
+            const dt = this.params.dt;
+            let steps = 0;
+            while (this.accumulator >= dt && steps < SimulationManager.MAX_SUBSTEPS) {
+                if (isGpu) {
+                    this.webGpuEngine!.step(dt, this.params);
+                } else {
+                    this.engine.update(dt, this.params);
+                }
+                this.accumulator -= dt;
+                steps++;
+            }
+            // If we hit the cap and are still behind, drop the backlog rather than spiral.
+            if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
+        }
+
+        // --- Render exactly once per displayed frame ---
+        if (isGpu) {
+            this.webGpuEngine!.render(this.params);
+        } else {
+            if (this.params.engineType === 'barnes') {
+                this.renderer.quadTree = (this.engine as BarnesHutEngine).root || null;
+            } else {
+                this.renderer.quadTree = null;
+            }
+            this.renderer.render();
+        }
+
         this.frames++;
 
         if (now - this.lastTelemetryUpdate >= 250) {

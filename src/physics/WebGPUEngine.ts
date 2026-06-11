@@ -298,30 +298,27 @@ export class WebGPUEngine implements PhysicsEngine {
     }
 
     /**
-     * Re-encodes compute commands directly into the WebGPU render API.
-     * Toggles read/write Ping-Pong buffers automatically per loop execution.
-     * @param dt - Unused delta duration inside function logic (transferred via updateUniforms).
+     * Advances the simulation by one compute step (no rendering).
+     * Toggles the read/write ping-pong buffers and increments simStep so the
+     * latest state always lives in the buffer the NEXT step would read from.
+     * Decoupled from rendering so the caller can run several fixed-dt sub-steps
+     * per displayed frame (frame-rate-independent physics).
+     * @param dt - Delta time for this physics step.
      * @param params - Configuration parameter blocks evaluating runtime features.
      */
-    update(dt: number, params: PhysicsParams) {
-        if (!this.device || !this.pipeline || !this.renderPipeline || !this.context) return;
+    step(dt: number, params: PhysicsParams) {
+        if (!this.device || !this.pipeline) return;
         if (!this.bindGroupComputeA || !this.bindGroupComputeB) return;
-        if (!this.bindGroupRenderA || !this.bindGroupRenderB) return;
 
-        // 1. Update Uniforms
         this.updateUniforms(dt, params);
-        // 2. Encode Commands
-        const commandEncoder = this.device.createCommandEncoder({ label: 'Command Encoder' });
 
-        // -- COMPUTE PASS --
+        const commandEncoder = this.device.createCommandEncoder({ label: 'Compute Command Encoder' });
+
         const computePass = commandEncoder.beginComputePass({ label: 'Compute Pass' });
         computePass.setPipeline(this.pipeline);
-
-        // Bind Params (Group 0)
         computePass.setBindGroup(0, this.bindGroupParams!);
 
-        // Determine compute bind group
-        // Step 0: Read A, Write B. (Even)
+        // Step 0 (even): read A, write B.
         const bgCompute = (this.simStep % 2 === 0) ? this.bindGroupComputeA : this.bindGroupComputeB;
         computePass.setBindGroup(1, bgCompute!);
 
@@ -329,11 +326,30 @@ export class WebGPUEngine implements PhysicsEngine {
         computePass.dispatchWorkgroups(workgroupCount);
         computePass.end();
 
-        // -- RENDER PASS --
-        // Render the buffer that was just written to (particlesOut).
-        // The render pipeline uses the exact same bind group layout as the compute pipeline.
-        // Therefore, binding the same group used for compute allows the vertex shader 
-        // to natively read the `particlesOut` storage buffer as its input.
+        const start = performance.now();
+        this.device.queue.submit([commandEncoder.finish()]);
+        this.device.queue.onSubmittedWorkDone().then(() => {
+            this.lastDispatchTimeMs = performance.now() - start;
+        });
+
+        // Swap for next step. After incrementing, the latest state is in the
+        // buffer the next compute step would READ from.
+        this.simStep++;
+    }
+
+    /**
+     * Renders the current simulation state to the canvas. Safe to call without a
+     * preceding step (e.g. when paused or when no physics sub-step ran this frame).
+     * @param params - Configuration parameters (camera transform, etc.).
+     */
+    render(params: PhysicsParams) {
+        if (!this.device || !this.renderPipeline || !this.context) return;
+        if (!this.bindGroupRenderA || !this.bindGroupRenderB) return;
+
+        // Refresh uniforms so camera changes apply even on frames with no step.
+        this.updateUniforms(0, params);
+
+        const commandEncoder = this.device.createCommandEncoder({ label: 'Render Command Encoder' });
 
         const textureView = this.context.getCurrentTexture().createView({ label: 'Canvas Texture View' });
         const renderPass = commandEncoder.beginRenderPass({
@@ -347,33 +363,29 @@ export class WebGPUEngine implements PhysicsEngine {
         });
 
         renderPass.setPipeline(this.renderPipeline);
-
-        // Bind Group 0 (Params)
-        // WebGPU validation requires all bind groups declared in the shader layout to be bound, 
-        // even if the specific entry point (e.g. fragment shader) does not actively reference them.
         renderPass.setBindGroup(0, this.bindGroupParams!);
 
-        // Determine render bind group
-        // If step 0: Read A, Wrote B. So new state is in B.
-        // We render what we just wrote.
-        const bgRender = (this.simStep % 2 === 0) ? this.bindGroupRenderB : this.bindGroupRenderA;
-
+        // The latest written state lives in the buffer the next step would read.
+        // After simStep was incremented in step(): even -> A holds latest, odd -> B.
+        const bgRender = (this.simStep % 2 === 0) ? this.bindGroupRenderA : this.bindGroupRenderB;
         renderPass.setBindGroup(1, bgRender);
 
         // Draw 6 vertices per instance, with this.count instances
         renderPass.draw(6, this.count);
         renderPass.end();
 
-        const start = performance.now();
         this.device.queue.submit([commandEncoder.finish()]);
+    }
 
-        this.device.queue.onSubmittedWorkDone().then(() => {
-            const end = performance.now();
-            this.lastDispatchTimeMs = end - start;
-        });
-
-        // Swap for next frame
-        this.simStep++;
+    /**
+     * Convenience wrapper: advance one step and render. Retained for callers that
+     * do not perform their own fixed-timestep sub-stepping.
+     * @param dt - Delta time multiplier.
+     * @param params - Configuration parameter blocks evaluating runtime features.
+     */
+    update(dt: number, params: PhysicsParams) {
+        this.step(dt, params);
+        this.render(params);
     }
 
     /**

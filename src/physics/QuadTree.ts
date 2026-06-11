@@ -34,6 +34,12 @@ export class QuadTree {
     private static pool: QuadTree[] = [];
     private static readonly POOL_CAPACITY = 20000; // Pre-allocate/Limit
 
+    // Below this cell width we stop subdividing and let a leaf hold extra points.
+    // Prevents unbounded recursion / node-pool exhaustion when many particles
+    // converge on (nearly) the same coordinate. Far below the softening length,
+    // so it has no effect on force accuracy.
+    private static readonly MIN_CELL_SIZE = 1e-3;
+
     /**
      * Retrieves a QuadTree instance from the object pool or creates a new one.
      * @param boundary - Spatial area constraints designated for this node.
@@ -168,12 +174,15 @@ export class QuadTree {
             return false;
         }
 
-        if (this.points.length < this.capacity && !this.divided) {
-            this.points.push(index);
-            return true;
-        }
-
         if (!this.divided) {
+            // Keep storing points in this leaf while there is capacity, or once the
+            // cell has shrunk below the minimum size (avoids infinite subdivision
+            // for coincident/near-coincident particles).
+            if (this.points.length < this.capacity || this.boundary.width < QuadTree.MIN_CELL_SIZE) {
+                this.points.push(index);
+                return true;
+            }
+
             this.subdivide();
 
             // Move existing points to children

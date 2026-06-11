@@ -93,8 +93,9 @@ fn sim_update(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
     acc = acc - pos * aSMBH_base;
   }
 
-  // 5. Integrator (Leapfrog)
-  // Maintains orbital stability for large particle bodies without decaying energy limits.
+  // 5. Integrator (kick-drift leapfrog, symplectic)
+  // Velocity is staggered half a step ahead of position by the initial conditions,
+  // making this 2nd-order and energy-stable for orbital motion (no secular decay).
   vel = vel + acc * params.dt;
   pos = pos + vel * params.dt;
 
