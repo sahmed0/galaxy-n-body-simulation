@@ -9,6 +9,7 @@ import { SimulationManager } from '../state';
  */
 export function setupUI(sim: SimulationManager) {
     const engineSelect = document.getElementById('ui-engine') as HTMLSelectElement;
+    const galaxyModeSelect = document.getElementById('ui-galaxy-mode') as HTMLSelectElement;
     const starsInput = document.getElementById('ui-stars') as HTMLInputElement;
     const gravityInput = document.getElementById('ui-gravity') as HTMLInputElement;
     const gravityVal = document.getElementById('ui-gravity-value') as HTMLElement;
@@ -24,6 +25,7 @@ export function setupUI(sim: SimulationManager) {
     }
 
     engineSelect.value = sim.params.engineType;
+    if (galaxyModeSelect) galaxyModeSelect.value = sim.params.galaxyMode;
     starsInput.value = sim.params.count.toString();
     gravityInput.value = sim.params.gravity.toString();
     if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);
@@ -41,6 +43,15 @@ export function setupUI(sim: SimulationManager) {
         sim.params.engineType = target.value;
         await sim.switchEngine(sim.params.engineType);
     });
+
+    if (galaxyModeSelect) {
+        galaxyModeSelect.addEventListener('change', async (e) => {
+            const target = e.target as HTMLSelectElement;
+            sim.params.galaxyMode = target.value as 'core' | 'selfgrav';
+            // Changing the model rebuilds the initial conditions.
+            await sim.restart();
+        });
+    }
 
     starsInput.addEventListener('change', (e) => {
         const target = e.target as HTMLInputElement;
