@@ -4,6 +4,44 @@
 import { SimulationManager } from '../state';
 
 /**
+ * Disables the "GPU: WebGPU" option in the engine dropdown so it can no longer
+ * be selected once WebGPU has been ruled out.
+ * @param select - The engine <select> element.
+ */
+function disableGpuOption(select: HTMLSelectElement) {
+    const gpuOption = select.querySelector('option[value="webgpu"]') as HTMLOptionElement | null;
+    if (gpuOption) {
+        gpuOption.disabled = true;
+        gpuOption.textContent = 'GPU: WebGPU (unavailable)';
+    }
+}
+
+/**
+ * Shows a transient, dismissable banner notifying the user of an engine change
+ * (e.g. a forced fallback from WebGPU to a CPU engine). Reuses a single banner
+ * element so repeated notices replace rather than stack.
+ * @param message - The text to display.
+ */
+function showEngineBanner(message: string) {
+    let banner = document.getElementById('engine-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'engine-banner';
+        banner.className = 'engine-banner tactical-glass';
+        banner.setAttribute('role', 'alert');
+        document.body.appendChild(banner);
+    }
+    banner.textContent = message;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'engine-banner-close';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => banner?.remove());
+    banner.appendChild(closeBtn);
+}
+
+/**
  * Initialises and binds HTML UI elements to simulation parameters.
  * @param sim - The SimulationManager instance.
  */
@@ -26,6 +64,18 @@ export function setupUI(sim: SimulationManager) {
 
     engineSelect.value = sim.params.engineType;
     if (galaxyModeSelect) galaxyModeSelect.value = sim.params.galaxyMode;
+
+    // WebGPU may have been ruled out during init() (which runs before setupUI):
+    // reflect that immediately, and stay in sync if the device is lost later.
+    if (!sim.webGpuAvailable) {
+        disableGpuOption(engineSelect);
+        showEngineBanner('WebGPU unavailable — running CPU Barnes-Hut');
+    }
+    sim.onEngineFallback = (reason: string) => {
+        disableGpuOption(engineSelect);
+        engineSelect.value = sim.params.engineType;
+        showEngineBanner(reason);
+    };
     starsInput.value = sim.params.count.toString();
     gravityInput.value = sim.params.gravity.toString();
     if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);

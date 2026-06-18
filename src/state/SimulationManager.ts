@@ -5,6 +5,7 @@ import {
     PhysicsState,
     PhysicsMemory,
     WebGPUEngine,
+    WebGPUUnavailableError,
     BruteForceEngine,
     BarnesHutEngine,
     WorkerBridge,
@@ -79,6 +80,28 @@ export class SimulationManager {
     workerBridge: WorkerBridge | null = null;
     renderer!: CanvasRenderer;
 
+    /**
+     * False once WebGPU has been determined unusable (unavailable at startup or
+     * the device was lost at runtime). Callers should not attempt to (re)select
+     * the GPU engine while this is false.
+     */
+    webGpuAvailable = true;
+
+    /**
+     * Whether the one-time GPU re-creation has already been spent. On the first
+     * post-init device loss we attempt to rebuild the device once; a subsequent
+     * loss (or a failed rebuild) falls back to the CPU engine for good.
+     */
+    private webGpuRecoveryAttempted = false;
+
+    /**
+     * Invoked when the simulation is forced off WebGPU onto a CPU engine, either
+     * because init failed or the device was lost. Lets the UI disable the GPU
+     * option and surface a visible notice. `reason` is a short human-readable
+     * explanation suitable for display.
+     */
+    onEngineFallback: (reason: string) => void = () => { };
+
     animationFrameId: number = 0;
     frames = 0;
     lastTelemetryUpdate = 0;
@@ -141,21 +164,100 @@ export class SimulationManager {
         this.renderer = new CanvasRenderer(canvasId, this.state);
 
         if (this.params.engineType === 'webgpu') {
-            this.webGpuEngine = new WebGPUEngine();
-            await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
-            this.activeEngineStr = 'gpu';
-            this.engine = this.webGpuEngine;
-            this.webGpuEngine.setVisible(true);
-            this.renderer.canvas.style.display = 'none';
+            try {
+                this.webGpuEngine = new WebGPUEngine();
+                await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
+                this.registerWebGpuLossHandler();
+                this.activeEngineStr = 'gpu';
+                this.engine = this.webGpuEngine;
+                this.webGpuEngine.setVisible(true);
+                this.renderer.canvas.style.display = 'none';
 
-            const preset = ENGINE_PRESETS['webgpu'];
-            if (preset) {
-                this.params.theta = preset.theta;
-                this.params.softening = preset.softening;
-                this.params.dt = preset.timeStep;
+                const preset = ENGINE_PRESETS['webgpu'];
+                if (preset) {
+                    this.params.theta = preset.theta;
+                    this.params.softening = preset.softening;
+                    this.params.dt = preset.timeStep;
+                }
+            } catch (err) {
+                this.markWebGpuUnavailable(err);
+                this.params.engineType = 'barnes';
+                await this.switchEngine('barnes');
             }
         } else {
             await this.switchEngine(this.params.engineType);
+        }
+    }
+
+    /**
+     * Records that WebGPU is unusable and tears down any half-initialised engine.
+     * Centralises the bookkeeping shared by a failed init and a runtime device
+     * loss. Does not itself switch engines — the caller decides how to recover.
+     * @param err - The originating error, logged for diagnostics.
+     */
+    private markWebGpuUnavailable(err: unknown) {
+        this.webGpuAvailable = false;
+        const reason = err instanceof WebGPUUnavailableError ? err.message
+            : err instanceof Error ? err.message
+                : String(err);
+        console.error(`WebGPU unavailable, falling back to CPU physics: ${reason}`, err);
+        if (this.webGpuEngine) {
+            this.webGpuEngine.setVisible(false);
+            this.webGpuEngine = null;
+        }
+    }
+
+    /**
+     * Handles a WebGPU failure detected *after* a successful start (a runtime
+     * device loss): marks GPU unavailable, switches to the Barnes-Hut CPU engine,
+     * and notifies the UI so it can disable the option and show a notice.
+     * @param notice - Human-readable message shown to the user.
+     */
+    private handleWebGpuFailure(notice: string) {
+        if (!this.webGpuAvailable) return; // Already handled.
+        this.markWebGpuUnavailable(new WebGPUUnavailableError(notice));
+        this.params.engineType = 'barnes';
+        // switchEngine is async; we are in a fire-and-forget callback context.
+        void this.switchEngine('barnes').then(() => this.onEngineFallback(notice));
+    }
+
+    /**
+     * Points the active GPU engine's device-loss callback at {@link onWebGpuDeviceLost}.
+     * Shared by every place that (re)creates the WebGPU engine so the recovery
+     * path is wired consistently.
+     */
+    private registerWebGpuLossHandler() {
+        if (!this.webGpuEngine) return;
+        this.webGpuEngine.onDeviceLost = (info) => { void this.onWebGpuDeviceLost(info); };
+    }
+
+    /**
+     * Reacts to a runtime WebGPU device loss with a bounded, one-time recovery:
+     * attempt to re-create the device on the existing engine once; if that
+     * succeeds we stay on the GPU, otherwise (or on any later loss) we fall back
+     * to the Barnes-Hut CPU engine for good.
+     * @param info - The device-loss details reported by WebGPU.
+     */
+    private async onWebGpuDeviceLost(info: GPUDeviceLostInfo) {
+        if (!this.webGpuAvailable || !this.webGpuEngine) return;
+        const reasonStr = info.reason || 'unknown';
+
+        if (this.webGpuRecoveryAttempted) {
+            // One-time retry already spent — give up on the GPU.
+            this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) — running CPU Barnes-Hut`);
+            return;
+        }
+        this.webGpuRecoveryAttempted = true;
+        console.warn(`WebGPU device lost (${reasonStr}); attempting a one-time GPU re-creation...`);
+
+        try {
+            await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
+            this.registerWebGpuLossHandler();
+            this.webGpuEngine.updateUniforms(this.params.dt, this.params);
+            console.log('WebGPU device re-created; continuing on GPU.');
+        } catch (err) {
+            console.error('WebGPU re-creation failed:', err);
+            this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) and could not be re-created — running CPU Barnes-Hut`);
         }
     }
 
@@ -408,16 +510,33 @@ export class SimulationManager {
         } else if (type === 'barnes') {
             this.engine = new BarnesHutEngine(this.state);
         } else if (type === 'webgpu') {
-            console.log("Switching to WebGPU...");
-            this.activeEngineStr = 'gpu';
-
-            if (!this.webGpuEngine) {
-                this.webGpuEngine = new WebGPUEngine();
-                await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
-            } else {
-                this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
+            if (!this.webGpuAvailable) {
+                // WebGPU was already ruled out; do not retry. Stay on CPU.
+                this.params.engineType = 'barnes';
+                this.engine = new BarnesHutEngine(this.state);
+                this.onEngineFallback('WebGPU unavailable — running CPU Barnes-Hut');
+                return;
             }
 
+            console.log("Switching to WebGPU...");
+
+            try {
+                if (!this.webGpuEngine) {
+                    this.webGpuEngine = new WebGPUEngine();
+                    await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
+                    this.registerWebGpuLossHandler();
+                } else {
+                    this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
+                }
+            } catch (err) {
+                this.markWebGpuUnavailable(err);
+                this.params.engineType = 'barnes';
+                this.engine = new BarnesHutEngine(this.state);
+                this.onEngineFallback('WebGPU failed to initialise — running CPU Barnes-Hut');
+                return;
+            }
+
+            this.activeEngineStr = 'gpu';
             this.webGpuEngine.setVisible(true);
 
             if (this.renderer && this.renderer.canvas) {
