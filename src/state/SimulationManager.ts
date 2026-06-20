@@ -34,14 +34,14 @@ export const GALAXY_RADIUS = 500;
 /**
  * Inner radius of the "core"-preset annulus (see {@link GALAXY_RADIUS}).
  */
-export const DISK_INNER_RADIUS = 50;
+export const DISK_INNER_RADIUS = 0;
 
 /**
  * Mass of the central core object (SMBH) in the "core" galaxy preset. The
  * self-gravitating preset has no central point mass: its rotation is set by the
  * disk's own gravity plus the dark-matter halo.
  */
-export const CORE_MASS = 4300000;
+export const CORE_MASS = 1;
 
 /**
  * Exponential scale length R_d of the self-gravitating disk:
@@ -66,7 +66,7 @@ export const DISK_TRUNCATION = 4;
  * and the Toomre Q below - stay consistent at any star count. Unused by the
  * "core" preset, where the disk is just the raw Salpeter masses (test particles).
  */
-export const SELF_GRAV_DISK_MASS = 5.0e7;
+export const SELF_GRAV_DISK_MASS = 13953;
 
 /**
  * Target Toomre Q for the self-gravitating preset. Q ~ 1.2-1.5 is the
