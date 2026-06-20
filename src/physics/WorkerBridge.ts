@@ -65,11 +65,15 @@ export class WorkerBridge implements PhysicsEngine {
     }
 
     /**
-     * Closes network communication bridging local state cleanly with isolated logic contexts.
+     * Closes network communication bridging local state cleanly with isolated
+     * logic contexts: clears the ping interval and terminates the worker (which
+     * kills it even while it is parked in `Atomics.wait`). Idempotent - a second
+     * call clears nothing and re-terminating an already-dead worker is a no-op.
      */
-    public destroy(): void {
+    public dispose(): void {
         if (this.pingInterval) {
             clearInterval(this.pingInterval);
+            this.pingInterval = null;
         }
         this.worker.terminate();
     }

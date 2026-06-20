@@ -41,13 +41,14 @@ vi.mock('../physics', async (importOriginal) => {
         getMemoryUsageMB = () => 0;
         getPositions = () => new Float32Array(0);
         getVelocities = () => new Float32Array(0);
+        dispose = vi.fn();
         constructor() {
             mockState.instances.push(this);
         }
     }
 
     class MockWorkerBridge {
-        destroy = vi.fn();
+        dispose = vi.fn();
         update = vi.fn();
         getPositions = () => new Float32Array(0);
         getVelocities = () => new Float32Array(0);
@@ -90,7 +91,7 @@ beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
 });
 
-describe('SimulationManager — WebGPU init success', () => {
+describe('SimulationManager - WebGPU init success', () => {
     it('runs on the GPU engine when WebGPU initialises', async () => {
         const sim = makeSim();
         await sim.init('canvas');
@@ -103,7 +104,7 @@ describe('SimulationManager — WebGPU init success', () => {
     });
 });
 
-describe('SimulationManager — WebGPU init failure', () => {
+describe('SimulationManager - WebGPU init failure', () => {
     it('falls back to the Barnes-Hut CPU engine and marks WebGPU unavailable', async () => {
         mockState.initBehavior = 'fail';
         const sim = makeSim();
@@ -133,7 +134,7 @@ describe('SimulationManager — WebGPU init failure', () => {
     });
 });
 
-describe('SimulationManager.switchEngine — selecting WebGPU', () => {
+describe('SimulationManager.switchEngine - selecting WebGPU', () => {
     it('does not retry WebGPU once it has been ruled out, and notifies the UI', async () => {
         mockState.initBehavior = 'fail';
         const sim = makeSim();
@@ -181,7 +182,7 @@ describe('SimulationManager.switchEngine — selecting WebGPU', () => {
     });
 });
 
-describe('SimulationManager — runtime WebGPU device loss', () => {
+describe('SimulationManager - runtime WebGPU device loss', () => {
     it('recovers on the first loss by re-creating the device and stays on the GPU', async () => {
         const sim = makeSim();
         await sim.init('canvas');

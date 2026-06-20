@@ -69,7 +69,7 @@ export function setupUI(sim: SimulationManager) {
     // reflect that immediately, and stay in sync if the device is lost later.
     if (!sim.webGpuAvailable) {
         disableGpuOption(engineSelect);
-        showEngineBanner('WebGPU unavailable — running CPU Barnes-Hut');
+        showEngineBanner('WebGPU unavailable - running CPU Barnes-Hut');
     }
     sim.onEngineFallback = (reason: string) => {
         disableGpuOption(engineSelect);

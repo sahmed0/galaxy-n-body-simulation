@@ -49,6 +49,15 @@ export class BruteForceEngine implements PhysicsEngine {
     }
 
     /**
+     * No owned resources (workers, GPU buffers, DOM nodes, timers) to release.
+     * Implemented for contract symmetry so callers can dispose any engine
+     * uniformly.
+     */
+    public dispose(): void {
+        // Intentionally empty.
+    }
+
+    /**
      * Updates the simulation by a time step `dt`.
      * Uses Leapfrog integration (v half-step ahead):
      * 1. Calculate a(t)

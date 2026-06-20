@@ -55,6 +55,18 @@ export class BarnesHutEngine implements PhysicsEngine {
     }
 
     /**
+     * Releases the pooled QuadTree back to its node pool so it can be reused by a
+     * subsequent engine, then drops the state reference. Idempotent.
+     */
+    public dispose(): void {
+        if (this.root) {
+            this.root.free();
+            this.root = undefined;
+        }
+        this.state = undefined;
+    }
+
+    /**
      * Updates the physics simulation using the Leapfrog integration method and QuadTree spatial partitioning.
      * @param dt - The time step delta to apply to velocities and positions.
      * @param params - A configuration object defining system forces such as gravity and softening.

@@ -508,4 +508,22 @@ export class WebGPUEngine implements PhysicsEngine {
     setVisible(visible: boolean) {
         this.canvas.style.display = visible ? 'block' : 'none';
     }
+
+    /**
+     * Tears the engine down for good: explicitly frees every GPU buffer, destroys
+     * the device, and removes the canvas appended in the constructor. Destroying
+     * the device resolves `device.lost` with reason `'destroyed'`, which the
+     * loss handler in init() deliberately ignores, so this does NOT trigger the
+     * CPU-fallback path. Idempotent - safe to call more than once.
+     */
+    dispose() {
+        this.bufferParticlesA?.destroy();
+        this.bufferParticlesB?.destroy();
+        this.bufferProps?.destroy();
+        this.bufferParams?.destroy();
+        this.device?.destroy();
+        this.canvas.remove();
+        // Forget every per-device reference so the instance is inert afterwards.
+        this.resetGpuResources();
+    }
 }

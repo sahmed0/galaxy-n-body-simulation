@@ -69,7 +69,7 @@ beforeEach(() => {
     vi.spyOn(console, 'error').mockImplementation(() => { });
 });
 
-describe('setupUI — WebGPU already unavailable at startup', () => {
+describe('setupUI - WebGPU already unavailable at startup', () => {
     it('disables the GPU option and shows a fallback banner', () => {
         const sim = makeSimStub({ webGpuAvailable: false } as Partial<SimulationManager>);
         setupUI(sim);
@@ -92,7 +92,7 @@ describe('setupUI — WebGPU already unavailable at startup', () => {
     });
 });
 
-describe('setupUI — runtime fallback via onEngineFallback', () => {
+describe('setupUI - runtime fallback via onEngineFallback', () => {
     it('wires onEngineFallback to disable the GPU option, sync the select, and show the reason', () => {
         const sim = makeSimStub();
         setupUI(sim);
@@ -100,7 +100,7 @@ describe('setupUI — runtime fallback via onEngineFallback', () => {
 
         // Simulate the manager forcing a fallback at runtime.
         sim.params.engineType = 'barnes';
-        sim.onEngineFallback('WebGPU device lost (unknown) — running CPU Barnes-Hut');
+        sim.onEngineFallback('WebGPU device lost (unknown) - running CPU Barnes-Hut');
 
         expect(gpuOption().disabled).toBe(true);
         expect(engineSelect().value).toBe('barnes');

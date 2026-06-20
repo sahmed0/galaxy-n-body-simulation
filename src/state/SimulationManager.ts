@@ -44,7 +44,7 @@ export const CORE_MASS = 4300000;
  * disk's collective self-gravity dominates the SMBH (~12x CORE_MASS) and the
  * dark-matter halo, which is what allows swing-amplified spiral arms to form.
  * It is normalised to a fixed total (independent of particle count) so the
- * dynamics — and the Toomre Q below — stay consistent at any star count.
+ * dynamics - and the Toomre Q below - stay consistent at any star count.
  * Note: in the default "core" preset this is unused; the disk is just the raw
  * Salpeter masses (~thousands of units) and behaves as test particles, which
  * is why that preset relaxes into concentric rings rather than spiral arms.
@@ -192,7 +192,7 @@ export class SimulationManager {
     /**
      * Records that WebGPU is unusable and tears down any half-initialised engine.
      * Centralises the bookkeeping shared by a failed init and a runtime device
-     * loss. Does not itself switch engines — the caller decides how to recover.
+     * loss. Does not itself switch engines - the caller decides how to recover.
      * @param err - The originating error, logged for diagnostics.
      */
     private markWebGpuUnavailable(err: unknown) {
@@ -202,7 +202,9 @@ export class SimulationManager {
                 : String(err);
         console.error(`WebGPU unavailable, falling back to CPU physics: ${reason}`, err);
         if (this.webGpuEngine) {
-            this.webGpuEngine.setVisible(false);
+            // Release the device, GPU buffers, and the appended canvas - not just
+            // hide it - so a lost/failed GPU engine leaves nothing behind.
+            this.webGpuEngine.dispose();
             this.webGpuEngine = null;
         }
     }
@@ -243,8 +245,8 @@ export class SimulationManager {
         const reasonStr = info.reason || 'unknown';
 
         if (this.webGpuRecoveryAttempted) {
-            // One-time retry already spent — give up on the GPU.
-            this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) — running CPU Barnes-Hut`);
+            // One-time retry already spent - give up on the GPU.
+            this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) - running CPU Barnes-Hut`);
             return;
         }
         this.webGpuRecoveryAttempted = true;
@@ -257,7 +259,7 @@ export class SimulationManager {
             console.log('WebGPU device re-created; continuing on GPU.');
         } catch (err) {
             console.error('WebGPU re-creation failed:', err);
-            this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) and could not be re-created — running CPU Barnes-Hut`);
+            this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) and could not be re-created - running CPU Barnes-Hut`);
         }
     }
 
@@ -267,6 +269,10 @@ export class SimulationManager {
     initGalaxy() {
         this.memory = new PhysicsMemory(this.params.count);
         this.state = new PhysicsState(this.params.count, this.memory);
+        // Tear down any live worker before dropping the reference: the old bridge
+        // holds the previous SharedArrayBuffer and can never be reused, so leaving
+        // it alive orphans a worker (parked in Atomics.wait) plus its ping timer.
+        this.workerBridge?.dispose();
         this.workerBridge = null;
 
         this.state.positionX[0] = 0;
@@ -369,8 +375,8 @@ export class SimulationManager {
 
     /**
      * Total inward radial acceleration on a star at radius `r` from the smooth
-     * mass components: the central SMBH, the dark-matter halo, and — only in the
-     * self-gravitating preset — the disk's own enclosed mass (monopole
+     * mass components: the central SMBH, the dark-matter halo, and - only in the
+     * self-gravitating preset - the disk's own enclosed mass (monopole
      * approximation). Used to set circular velocities and the epicyclic frequency.
      */
     private radialAcc(r: number): number {
@@ -492,7 +498,7 @@ export class SimulationManager {
         this.softResetVelocities();
 
         if (this.workerBridge && type !== 'worker') {
-            this.workerBridge.destroy();
+            this.workerBridge.dispose();
             this.workerBridge = null;
         }
 
@@ -514,7 +520,7 @@ export class SimulationManager {
                 // WebGPU was already ruled out; do not retry. Stay on CPU.
                 this.params.engineType = 'barnes';
                 this.engine = new BarnesHutEngine(this.state);
-                this.onEngineFallback('WebGPU unavailable — running CPU Barnes-Hut');
+                this.onEngineFallback('WebGPU unavailable - running CPU Barnes-Hut');
                 return;
             }
 
@@ -532,7 +538,7 @@ export class SimulationManager {
                 this.markWebGpuUnavailable(err);
                 this.params.engineType = 'barnes';
                 this.engine = new BarnesHutEngine(this.state);
-                this.onEngineFallback('WebGPU failed to initialise — running CPU Barnes-Hut');
+                this.onEngineFallback('WebGPU failed to initialise - running CPU Barnes-Hut');
                 return;
             }
 
@@ -570,6 +576,7 @@ export class SimulationManager {
     async restart() {
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = 0;
         }
 
         this.initGalaxy();
@@ -587,7 +594,10 @@ export class SimulationManager {
 
         this.lastFrameTime = 0;
         this.accumulator = 0;
-        this.loop();
+        // Guard against double-pumping: if a rAF was queued during the awaits
+        // above (loop() only assigns animationFrameId at its tail), don't start a
+        // second independent loop chain.
+        if (!this.animationFrameId) this.loop();
     }
 
     /**
