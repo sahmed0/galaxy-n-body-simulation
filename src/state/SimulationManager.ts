@@ -24,30 +24,47 @@ export const ENGINE_PRESETS = {
 };
 
 /**
- * Base radius for galaxy particle distribution generation.
+ * Base radius for galaxy particle distribution generation. Used by the "core"
+ * preset, which seeds the disk in the annulus
+ * [DISK_INNER_RADIUS, DISK_INNER_RADIUS + GALAXY_RADIUS]. The self-gravitating
+ * preset instead uses an exponential profile (see {@link DISK_SCALE_LENGTH}).
  */
 export const GALAXY_RADIUS = 500;
 
 /**
- * Inner radius of the disk; particles are seeded in the annulus
- * [DISK_INNER_RADIUS, DISK_INNER_RADIUS + GALAXY_RADIUS].
+ * Inner radius of the "core"-preset annulus (see {@link GALAXY_RADIUS}).
  */
 export const DISK_INNER_RADIUS = 50;
 
 /**
- * Mass of the central core object in the galaxy simulation.
+ * Mass of the central core object (SMBH) in the "core" galaxy preset. The
+ * self-gravitating preset has no central point mass: its rotation is set by the
+ * disk's own gravity plus the dark-matter halo.
  */
 export const CORE_MASS = 4300000;
 
 /**
- * Total disk mass used by the self-gravitating galaxy preset. Chosen so the
- * disk's collective self-gravity dominates the SMBH (~12x CORE_MASS) and the
- * dark-matter halo, which is what allows swing-amplified spiral arms to form.
- * It is normalised to a fixed total (independent of particle count) so the
- * dynamics - and the Toomre Q below - stay consistent at any star count.
- * Note: in the default "core" preset this is unused; the disk is just the raw
- * Salpeter masses (~thousands of units) and behaves as test particles, which
- * is why that preset relaxes into concentric rings rather than spiral arms.
+ * Exponential scale length R_d of the self-gravitating disk:
+ * Sigma(R) = Sigma0 * exp(-R/R_d). Unlike the old uniform-in-radius (Sigma ~ 1/R)
+ * profile, this is finite at the centre (no sigma_R cap needed) and tapers
+ * smoothly (no hard edge to seed instabilities).
+ */
+export const DISK_SCALE_LENGTH = 150;
+
+/**
+ * Outer truncation of the exponential disk, in scale lengths. Particles are
+ * seeded over R in [0, DISK_TRUNCATION * DISK_SCALE_LENGTH] via the truncated
+ * exponential inverse-CDF.
+ */
+export const DISK_TRUNCATION = 4;
+
+/**
+ * Total disk mass used by the self-gravitating galaxy preset. Chosen (in
+ * arbitrary code units) so the disk's collective self-gravity dominates where
+ * spiral arms form while the dark-matter halo flattens the outer rotation curve.
+ * Normalised to a fixed total (independent of particle count) so the dynamics -
+ * and the Toomre Q below - stay consistent at any star count. Unused by the
+ * "core" preset, where the disk is just the raw Salpeter masses (test particles).
  */
 export const SELF_GRAV_DISK_MASS = 5.0e7;
 
@@ -60,23 +77,15 @@ export const SELF_GRAV_DISK_MASS = 5.0e7;
 export const TOOMRE_Q = 1.3;
 
 /**
- * Cap on radial velocity dispersion as a fraction of the circular speed.
- * The 1/R surface-density profile would otherwise demand an enormous sigma_R
- * in the centre (Q is held fixed there), making the inner disk a hot blob and
- * flinging stars into the softened core. Capping keeps the spiral-forming
- * outer disk at the true target Q while taming the centre.
- */
-export const SIGMA_FRAC_MAX = 0.5;
-
-/**
  * Gravitational softening for the self-gravitating disk, expressed as a fraction
- * of the mean inter-particle spacing (see {@link SimulationManager.effectiveSoftening}).
- * The engine presets use softening = 1.0, which is correct for the SMBH-dominated
- * "core" preset but ~10-20x smaller than the disk's particle spacing. With
- * self-gravity ON that makes the disk collisional: close encounters between the
- * massive macro-particles deliver huge velocity kicks that fling stars out and
- * eject the SMBH within a crossing time. Softening on the order of the spacing
- * makes the disk behave as the smooth, collisionless system the model assumes.
+ * of the local inter-particle spacing at the half-mass radius (see
+ * {@link SimulationManager.effectiveSoftening}). The engine presets use
+ * softening = 1.0, which is correct for the central-mass-dominated "core" preset
+ * but far smaller than the disk's particle spacing. With self-gravity ON that
+ * makes the disk collisional: close encounters between the massive macro-particles
+ * deliver huge velocity kicks that fling stars out within a crossing time.
+ * Softening on the order of the spacing makes the disk behave as the smooth,
+ * collisionless system the model assumes.
  */
 export const SELF_GRAV_SOFTENING_FACTOR = 0.9;
 
@@ -124,6 +133,17 @@ export class SimulationManager {
      * the circular velocity and to compute the Toomre-Q velocity dispersion.
      */
     diskMass = 0;
+
+    /**
+     * Azimuthally-averaged radial-acceleration table (a vs radius) for the
+     * self-gravitating disk, built from the *realized* particle distribution
+     * plus the halo (see {@link SimulationManager.buildRotationCurve}). Sampled
+     * on a uniform grid [rotCurveRMin, rotCurveRMax] so the initial circular
+     * speed and epicyclic frequency match the engine's actual 2-D forces.
+     */
+    private rotCurveAcc: Float64Array | null = null;
+    private rotCurveRMin = 0;
+    private rotCurveRMax = 0;
 
     // Fixed-timestep accumulator: decouples simulation speed from display refresh
     // rate so the physics advances at the same wall-clock rate on 60/120/144 Hz.
@@ -290,6 +310,28 @@ export class SimulationManager {
         this.workerBridge?.dispose();
         this.workerBridge = null;
 
+        // Lock in the mode-appropriate softening *before* computing velocities:
+        // the initial conditions (circular speed, epicyclic frequency, and - for
+        // the self-gravitating disk - the measured rotation curve) all read
+        // params.softening, so they must use the same softening the engine will
+        // run with, or the disk starts out of centrifugal balance.
+        this.params.softening = this.effectiveSoftening();
+
+        if (this.params.galaxyMode === 'selfgrav') {
+            this.initSelfGravDisk();
+        } else {
+            this.initCoreGalaxy();
+        }
+    }
+
+    /**
+     * "Core" preset: a central SMBH (index 0) surrounded by a thin annulus of
+     * Salpeter-sampled test particles. The disk is light, so it behaves as test
+     * particles orbiting the SMBH + halo and relaxes into concentric rings.
+     */
+    private initCoreGalaxy() {
+        this.diskMass = 0;
+
         this.state.positionX[0] = 0;
         this.state.positionY[0] = 0;
         this.state.velocityX[0] = 0;
@@ -299,15 +341,7 @@ export class SimulationManager {
         this.state.colors[1] = 0;
         this.state.colors[2] = 0;
 
-        const selfGrav = this.params.galaxyMode === 'selfgrav';
-
-        // Lock in the mode-appropriate softening *before* computing velocities:
-        // radialAcc() (used for the circular speed and epicyclic frequency) reads
-        // params.softening, so the initial conditions must use the same softening
-        // the engine will run with, or the disk starts out of centrifugal balance.
-        this.params.softening = this.effectiveSoftening();
-
-        const particles: { x: number; y: number; vx: number; vy: number; mass: number; r: number; g: number; b: number; dist: number }[] = [];
+        const particles: { x: number; y: number; mass: number; r: number; g: number; b: number; dist: number }[] = [];
 
         for (let i = 1; i < this.params.count; i++) {
             const angle = Math.random() * Math.PI * 2;
@@ -315,32 +349,9 @@ export class SimulationManager {
             const x = Math.cos(angle) * dist;
             const y = Math.sin(angle) * dist;
 
-            const mMin = 0.1;
-            const mMax = 50.0;
-            const p = 1.35;
-            const u = Math.random();
-            const minP = Math.pow(mMin, -p);
-            const maxP = Math.pow(mMax, -p);
-            const mass = Math.pow(u * (maxP - minP) + minP, -1 / p);
-
-            // Colour reflects the *stellar* mass (Salpeter, 0.1-50 Msun), so it
-            // stays consistent across presets even when we overwrite the physical
-            // mass below for the self-gravitating disk.
+            const mass = this.sampleSalpeterMass();
             const [r, g, b] = massToColor(mass);
-            particles.push({ x, y, vx: 0, vy: 0, mass, r, g, b, dist });
-        }
-
-        if (selfGrav) {
-            // Equal-mass macro-particles tracing a fixed total disk mass (so the
-            // disk's self-gravity dominates the SMBH/halo and is independent of
-            // star count). Unlike rescaling the Salpeter *sum*, this avoids a
-            // ~400x mass spread whose heavy tail would scatter neighbours and
-            // gravitationally eject the SMBH. Colours still encode stellar mass.
-            const equalMass = SELF_GRAV_DISK_MASS / (this.params.count - 1);
-            for (const part of particles) part.mass = equalMass;
-            this.diskMass = SELF_GRAV_DISK_MASS;
-        } else {
-            this.diskMass = 0;
+            particles.push({ x, y, mass, r, g, b, dist });
         }
 
         particles.sort((a, b) => b.mass - a.mass);
@@ -369,8 +380,68 @@ export class SimulationManager {
         // central core, so it occupies one slot; add 1 to the count of qualifying
         // heavy stars (indices 1..tempActiveCount) so none are demoted to passive.
         this.params.activeCount = tempActiveCount + 1;
+    }
 
-        if (selfGrav) this.removeNetMomentum();
+    /**
+     * Self-gravitating preset: an exponential disk of equal-mass macro-particles
+     * embedded in the dark-matter halo, with no central point mass. Velocities
+     * are set from the *measured* 2-D rotation curve (so the disk starts in
+     * centrifugal balance with the engine's actual forces) and warmed to a target
+     * Toomre Q, producing swing-amplified transient spiral arms.
+     */
+    private initSelfGravDisk() {
+        const n = this.params.count;
+        const Rd = DISK_SCALE_LENGTH;
+        const Rmax = DISK_TRUNCATION * Rd;
+        // Normalisation of the truncated exponential CDF on [0, Rmax].
+        const cdfMax = 1 - Math.exp(-Rmax / Rd);
+        const equalMass = SELF_GRAV_DISK_MASS / n;
+        this.diskMass = SELF_GRAV_DISK_MASS;
+
+        const radii = new Float64Array(n);
+        for (let i = 0; i < n; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            // Inverse-CDF sample of the truncated exponential surface density.
+            const R = -Rd * Math.log(1 - Math.random() * cdfMax);
+            radii[i] = R;
+
+            this.state.positionX[i] = Math.cos(angle) * R;
+            this.state.positionY[i] = Math.sin(angle) * R;
+            this.state.mass[i] = equalMass;
+
+            // Colour still encodes a sampled stellar (Salpeter) mass for visual
+            // consistency with the core preset; the physical mass is equal.
+            const [r, g, b] = massToColor(this.sampleSalpeterMass());
+            this.state.colors[i * 3 + 0] = r;
+            this.state.colors[i * 3 + 1] = g;
+            this.state.colors[i * 3 + 2] = b;
+        }
+
+        // Tabulate the azimuthally-averaged radial acceleration from the realized
+        // particle distribution + halo, then warm each star to the target Q.
+        this.buildRotationCurve();
+        for (let i = 0; i < n; i++) {
+            this.computeStarVelocity(i, radii[i]);
+        }
+
+        // Every macro-particle is equal mass and self-gravitating.
+        this.params.activeCount = n;
+        this.removeNetMomentum();
+    }
+
+    /**
+     * Draws a stellar mass from a Salpeter IMF over [0.1, 50] (exponent 1.35).
+     * Used for particle colours in both presets and for the physical (test-
+     * particle) masses in the "core" preset.
+     */
+    private sampleSalpeterMass(): number {
+        const mMin = 0.1;
+        const mMax = 50.0;
+        const p = 1.35;
+        const u = Math.random();
+        const minP = Math.pow(mMin, -p);
+        const maxP = Math.pow(mMax, -p);
+        return Math.pow(u * (maxP - minP) + minP, -1 / p);
     }
 
     /**
@@ -405,11 +476,18 @@ export class SimulationManager {
      */
     softResetVelocities() {
         if (!this.state) return;
-        for (let i = 1; i < this.params.count; i++) {
+        const selfGrav = this.diskMass > 0;
+        // Rebuild the measured rotation curve from the current positions so the
+        // recomputed circular speeds stay consistent with the actual field.
+        if (selfGrav) this.buildRotationCurve();
+        // The self-gravitating disk has no central point mass, so index 0 is a
+        // real disk particle and must be (re)warmed too; the "core" preset keeps
+        // its stationary SMBH at index 0.
+        for (let i = selfGrav ? 0 : 1; i < this.params.count; i++) {
             const distSq = this.state.positionX[i] * this.state.positionX[i] + this.state.positionY[i] * this.state.positionY[i];
             const dist = Math.sqrt(distSq);
 
-            if (dist === 0) continue;
+            if (dist === 0 && !selfGrav) continue;
 
             this.computeStarVelocity(i, dist);
         }
@@ -423,103 +501,231 @@ export class SimulationManager {
     /**
      * Softening to use given the current galaxy mode and engine. The "core" preset
      * uses the engine preset's softening; the self-gravitating preset overrides it
-     * with ~the disk's mean inter-particle spacing so the disk is collisionless
+     * with ~the disk's local inter-particle spacing so the disk is collisionless
      * rather than exploding (see {@link SELF_GRAV_SOFTENING_FACTOR}). Auto-scales
      * with star count. The base is taken from the engine preset (not the current
      * params.softening) so a stale self-gravitating value can't leak back into the
      * "core" preset when toggling modes on an engine that doesn't reset it.
+     *
+     * The exponential disk is centrally concentrated, so the *mean*-area spacing
+     * would under-soften the dense centre. We instead use the local spacing at the
+     * half-mass radius (R_1/2 ~ 1.68 R_d), where most of the mass and the relevant
+     * dynamics live: spacing = 1/sqrt(n_surf), n_surf = Sigma(R_1/2) / m_particle.
      */
     private effectiveSoftening(): number {
         const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
         const base = preset ? preset.softening : ENGINE_PRESETS.brute.softening;
         if (this.params.galaxyMode !== 'selfgrav') return base;
-        const outer = DISK_INNER_RADIUS + GALAXY_RADIUS;
-        const diskArea = Math.PI * (outer * outer - DISK_INNER_RADIUS * DISK_INNER_RADIUS);
-        const spacing = Math.sqrt(diskArea / Math.max(this.params.count - 1, 1));
+        const n = Math.max(this.params.count, 1);
+        const mParticle = SELF_GRAV_DISK_MASS / n;
+        const rHalf = 1.68 * DISK_SCALE_LENGTH;
+        const sigma0 = SELF_GRAV_DISK_MASS / (2 * Math.PI * DISK_SCALE_LENGTH * DISK_SCALE_LENGTH);
+        const sigmaHalf = sigma0 * Math.exp(-rHalf / DISK_SCALE_LENGTH);
+        const spacing = Math.sqrt(mParticle / Math.max(sigmaHalf, 1e-30));
         return Math.max(base, SELF_GRAV_SOFTENING_FACTOR * spacing);
     }
 
     /**
-     * Total inward radial acceleration on a star at radius `r` from the smooth
-     * mass components: the central SMBH, the dark-matter halo, and - only in the
-     * self-gravitating preset - the disk's own enclosed mass (monopole
-     * approximation). Used to set circular velocities and the epicyclic frequency.
+     * Inward radial acceleration from the dark-matter halo (isothermal-cored)
+     * at radius `r`: a_DM = dmStrength^2 * r / (r^2 + r_core^2). Shared by the
+     * "core" preset's analytic rotation curve and the self-gravitating preset's
+     * measured rotation curve.
+     */
+    private haloAcc(r: number): number {
+        const s = this.params.dmStrength;
+        return (s * s * r) / (r * r + this.params.dmCoreRadius * this.params.dmCoreRadius);
+    }
+
+    /**
+     * Total inward radial acceleration on a "core"-preset test particle at radius
+     * `r` from the central SMBH plus the dark-matter halo. (The self-gravitating
+     * preset uses a *measured* rotation curve instead; see
+     * {@link SimulationManager.buildRotationCurve}.)
      */
     private radialAcc(r: number): number {
+        const softenedDistSq = r * r + this.params.softening * this.params.softening;
+        const coreAcc = (this.params.gravity * CORE_MASS) / softenedDistSq;
+        return coreAcc + this.haloAcc(r);
+    }
+
+    /**
+     * Exponential surface density of the self-gravitating disk at radius `r`:
+     * Sigma(R) = Sigma0 * exp(-R/R_d), Sigma0 = Mdisk / (2*pi*R_d^2).
+     */
+    private diskSurfaceDensity(r: number): number {
+        const Rd = DISK_SCALE_LENGTH;
+        const sigma0 = this.diskMass / (2 * Math.PI * Rd * Rd);
+        return sigma0 * Math.exp(-r / Rd);
+    }
+
+    /**
+     * Builds {@link rotCurveAcc}: the azimuthally-averaged inward radial
+     * acceleration of the *realized* disk (summed pairwise from every particle,
+     * using the engine's softening) plus the analytic halo, sampled on a uniform
+     * radius grid. Setting circular speeds from this - rather than a spherical
+     * enclosed-mass monopole, which is wrong for a 2-D 1/r^2 disk - is what makes
+     * the disk start in centrifugal balance with the forces the engine computes.
+     */
+    private buildRotationCurve() {
+        const Nr = 128;
+        const Naz = 8;
+        const n = this.params.count;
         const G = this.params.gravity;
-        const rawDistSq = r * r;
-        const softenedDistSq = rawDistSq + this.params.softening * this.params.softening;
+        const epsSq = this.params.softening * this.params.softening;
+        const px = this.state.positionX;
+        const py = this.state.positionY;
+        const mass = this.state.mass;
 
-        const coreAcc = (G * CORE_MASS) / softenedDistSq;
-        const dmAcc = (this.params.dmStrength * this.params.dmStrength * r) / (rawDistSq + this.params.dmCoreRadius * this.params.dmCoreRadius);
+        const rMin = 0;
+        const rMax = 1.1 * DISK_TRUNCATION * DISK_SCALE_LENGTH;
+        const acc = new Float64Array(Nr);
 
-        let diskAcc = 0;
-        if (this.diskMass > 0) {
-            // Enclosed disk mass for the uniform-in-radius (Sigma ~ 1/R) profile.
-            const encFrac = Math.min(Math.max((r - DISK_INNER_RADIUS) / GALAXY_RADIUS, 0), 1);
-            diskAcc = (G * this.diskMass * encFrac) / softenedDistSq;
+        // Precompute azimuth unit vectors of the test points.
+        const cos = new Float64Array(Naz);
+        const sin = new Float64Array(Naz);
+        for (let a = 0; a < Naz; a++) {
+            const theta = (2 * Math.PI * a) / Naz;
+            cos[a] = Math.cos(theta);
+            sin[a] = Math.sin(theta);
         }
 
-        return coreAcc + dmAcc + diskAcc;
+        for (let k = 0; k < Nr; k++) {
+            const rk = rMin + ((rMax - rMin) * k) / (Nr - 1);
+            if (rk === 0) {
+                acc[k] = 0;
+                continue;
+            }
+            let aRadSum = 0;
+            for (let a = 0; a < Naz; a++) {
+                const tx = cos[a] * rk;
+                const ty = sin[a] * rk;
+                let axTot = 0;
+                let ayTot = 0;
+                for (let j = 0; j < n; j++) {
+                    const dx = px[j] - tx;
+                    const dy = py[j] - ty;
+                    const distSq = dx * dx + dy * dy + epsSq;
+                    const invD = 1 / Math.sqrt(distSq);
+                    const f = (G * mass[j] * invD) / distSq; // G m / (r^2+eps^2)^1.5
+                    axTot += f * dx;
+                    ayTot += f * dy;
+                }
+                // Inward radial component along the test-point radial direction.
+                aRadSum += -(axTot * cos[a] + ayTot * sin[a]);
+            }
+            acc[k] = aRadSum / Naz + this.haloAcc(rk);
+        }
+
+        this.rotCurveAcc = acc;
+        this.rotCurveRMin = rMin;
+        this.rotCurveRMax = rMax;
+    }
+
+    /** Linearly-interpolated inward radial acceleration from {@link rotCurveAcc}. */
+    private aRadInterp(r: number): number {
+        const acc = this.rotCurveAcc;
+        if (!acc) return 0;
+        const Nr = acc.length;
+        const r0 = this.rotCurveRMin;
+        const r1 = this.rotCurveRMax;
+        if (r <= r0) return acc[0];
+        if (r >= r1) return acc[Nr - 1] * ((r1 * r1) / (r * r)); // ~1/r^2 tail
+        const t = ((r - r0) / (r1 - r0)) * (Nr - 1);
+        const k = Math.floor(t);
+        const frac = t - k;
+        return acc[k] * (1 - frac) + acc[k + 1] * frac;
+    }
+
+    /** Circular speed from the measured rotation curve. */
+    private vCircAt(r: number): number {
+        return Math.sqrt(Math.max(this.aRadInterp(r) * r, 0));
+    }
+
+    /**
+     * Epicyclic frequency kappa = sqrt(2 (v/R)(v/R + dv/dR)) from the measured
+     * rotation curve via central finite difference.
+     */
+    private kappaAt(r: number): number {
+        const dr = Math.max(r * 0.01, 1e-3);
+        const rMinus = Math.max(r - dr, 1e-6);
+        const vP = this.vCircAt(r + dr);
+        const vM = this.vCircAt(rMinus);
+        const dvdr = (vP - vM) / (r + dr - rMinus);
+        const omega = this.vCircAt(r) / Math.max(r, 1e-6);
+        return Math.sqrt(Math.max(2 * omega * (omega + dvdr), 1e-6));
+    }
+
+    /**
+     * Radial velocity dispersion for the target Toomre Q at radius `r`:
+     * Q = sigma_R * kappa / (3.36 * G * Sigma) => sigma_R = Q * 3.36 * G * Sigma / kappa.
+     */
+    private sigmaRAt(r: number): number {
+        return (TOOMRE_Q * 3.36 * this.params.gravity * this.diskSurfaceDensity(r)) / this.kappaAt(r);
     }
 
     /**
      * Sets the staggered (leapfrog half-step) velocity for star `i` at radius
-     * `dist`. In the default "core" preset this is a near-circular orbit with a
-     * little scatter. In the self-gravitating preset the orbit is warmed with a
-     * radial + tangential velocity dispersion derived from a target Toomre Q so
-     * the disk is marginally stable and forms swing-amplified spiral arms.
+     * `dist`. In the "core" preset this is a near-circular orbit with a little
+     * scatter. In the self-gravitating preset the orbit uses the measured circular
+     * speed, is warmed with radial + tangential dispersions for a target Toomre Q,
+     * and has its mean azimuthal speed lowered by the asymmetric drift so the warm
+     * disk stays in radial equilibrium.
      */
     private computeStarVelocity(i: number, dist: number) {
         const px = this.state.positionX[i];
         const py = this.state.positionY[i];
-
-        const aTot = this.radialAcc(dist);
-        const vCirc = Math.sqrt(aTot * dist);
+        const r = Math.max(dist, 1e-3);
 
         // Radial (outward) and tangential (counter-clockwise) unit vectors.
-        const ux = px / dist;
-        const uy = py / dist;
+        const ux = px / r;
+        const uy = py / r;
         const tx = -uy;
         const ty = ux;
 
+        let aTot: number;
         let vx: number;
         let vy: number;
 
         if (this.diskMass > 0) {
-            // --- Self-gravitating disk: warm to target Toomre Q ---
-            // Epicyclic frequency: kappa^2 = 2 (v/R)(v/R + dv/dR), via finite diff.
-            const eps = Math.max(dist * 0.01, 1e-3);
-            const rPlus = dist + eps;
-            const rMinus = Math.max(dist - eps, 1e-3);
-            const vPlus = Math.sqrt(this.radialAcc(rPlus) * rPlus);
-            const vMinus = Math.sqrt(this.radialAcc(rMinus) * rMinus);
-            const dvdr = (vPlus - vMinus) / (rPlus - rMinus);
+            // --- Self-gravitating disk: measured rotation curve + Toomre-Q warming ---
+            aTot = this.aRadInterp(r);
+            const vCirc = this.vCircAt(r);
+            const omega = vCirc / r;
+            const kappa = this.kappaAt(r);
 
-            const omega = vCirc / dist;
-            const kappa = Math.sqrt(Math.max(2 * omega * (omega + dvdr), 1e-6));
-
-            // Local surface density of the uniform-in-R disk:
-            // Sigma(R) = Mdisk / (2*pi*R*(r1 - r0)), with (r1 - r0) = GALAXY_RADIUS.
-            const sigmaSurf = this.diskMass / (2 * Math.PI * dist * GALAXY_RADIUS);
-
-            // Toomre Q for stars: Q = sigma_R * kappa / (3.36 * G * Sigma)
-            //   => sigma_R = Q * 3.36 * G * Sigma / kappa
-            let sigmaR = (TOOMRE_Q * 3.36 * this.params.gravity * sigmaSurf) / kappa;
-            sigmaR = Math.min(sigmaR, SIGMA_FRAC_MAX * vCirc);
-
-            // Epicyclic relation between the two dispersions.
+            const sigmaR = this.sigmaRAt(r);
             const sigmaPhi = sigmaR * (kappa / (2 * omega));
 
-            const dvR = this.gaussianRandom() * sigmaR;
-            const dvPhi = this.gaussianRandom() * sigmaPhi;
+            // Asymmetric drift (Binney & Tremaine 2008, eq. 4.228, approx):
+            // v_c - v_phi ~ sigma_R^2 / (2 v_c) * [sigma_phi^2/sigma_R^2 - 1 -
+            //   d ln(Sigma sigma_R^2)/d ln R]. Lowers the mean azimuthal speed so
+            // the pressure-supported disk is not over-supported and flung outward.
+            let vBarPhi = vCirc;
+            if (vCirc > 1e-6) {
+                const dr = Math.max(r * 0.01, 1e-3);
+                const rMinus = Math.max(r - dr, 1e-3);
+                const fPlus = this.diskSurfaceDensity(r + dr) * this.sigmaRAt(r + dr) ** 2;
+                const fMinus = this.diskSurfaceDensity(rMinus) * this.sigmaRAt(rMinus) ** 2;
+                const dlnf = (Math.log(fPlus) - Math.log(fMinus)) / (Math.log(r + dr) - Math.log(rMinus));
+                const ratioSq = (sigmaPhi * sigmaPhi) / (sigmaR * sigmaR);
+                const va = ((sigmaR * sigmaR) / (2 * vCirc)) * (ratioSq - 1 - dlnf);
+                vBarPhi = Math.min(Math.max(vCirc - va, 0), vCirc);
+            }
 
-            // Mean motion is circular; asymmetric drift is neglected (the disk
-            // settles into equilibrium within a few dynamical times regardless).
-            vx = tx * vCirc + ux * dvR + tx * dvPhi;
-            vy = ty * vCirc + uy * dvR + ty * dvPhi;
+            // Safety: a pressure-supported disk has sigma < v_circ everywhere, so
+            // cap the dispersion kicks at the local circular speed. This is inert
+            // for the calibrated disk and only tames the r -> 0 limit, where
+            // v_circ -> 0 but Sigma stays finite (otherwise that lone central
+            // particle would get an ejecting kick).
+            const dvR = this.gaussianRandom() * Math.min(sigmaR, vCirc);
+            const dvPhi = this.gaussianRandom() * Math.min(sigmaPhi, vCirc);
+
+            vx = tx * vBarPhi + ux * dvR + tx * dvPhi;
+            vy = ty * vBarPhi + uy * dvR + ty * dvPhi;
         } else {
-            // --- Core-dominated (original): near-circular with mild scatter ---
+            // --- Core-dominated: near-circular with mild scatter ---
+            aTot = this.radialAcc(r);
+            const vCirc = Math.sqrt(Math.max(aTot * r, 0));
             const velocity = vCirc * (0.9 + Math.random() * 0.2);
             vx = tx * velocity;
             vy = ty * velocity;
