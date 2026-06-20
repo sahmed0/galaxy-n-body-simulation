@@ -69,6 +69,18 @@ export const TOOMRE_Q = 1.3;
 export const SIGMA_FRAC_MAX = 0.5;
 
 /**
+ * Gravitational softening for the self-gravitating disk, expressed as a fraction
+ * of the mean inter-particle spacing (see {@link SimulationManager.effectiveSoftening}).
+ * The engine presets use softening = 1.0, which is correct for the SMBH-dominated
+ * "core" preset but ~10-20x smaller than the disk's particle spacing. With
+ * self-gravity ON that makes the disk collisional: close encounters between the
+ * massive macro-particles deliver huge velocity kicks that fling stars out and
+ * eject the SMBH within a crossing time. Softening on the order of the spacing
+ * makes the disk behave as the smooth, collisionless system the model assumes.
+ */
+export const SELF_GRAV_SOFTENING_FACTOR = 0.9;
+
+/**
  * Manages the state, memory, and lifecycle of the N-Body physics simulation.
  */
 export class SimulationManager {
@@ -179,6 +191,9 @@ export class SimulationManager {
                     this.params.softening = preset.softening;
                     this.params.dt = preset.timeStep;
                 }
+                // The preset resets softening to the core-preset value; restore
+                // the larger self-gravitating softening so the disk stays stable.
+                this.params.softening = this.effectiveSoftening();
             } catch (err) {
                 this.markWebGpuUnavailable(err);
                 this.params.engineType = 'barnes';
@@ -285,9 +300,15 @@ export class SimulationManager {
         this.state.colors[2] = 0;
 
         const selfGrav = this.params.galaxyMode === 'selfgrav';
+
+        // Lock in the mode-appropriate softening *before* computing velocities:
+        // radialAcc() (used for the circular speed and epicyclic frequency) reads
+        // params.softening, so the initial conditions must use the same softening
+        // the engine will run with, or the disk starts out of centrifugal balance.
+        this.params.softening = this.effectiveSoftening();
+
         const particles: { x: number; y: number; vx: number; vy: number; mass: number; r: number; g: number; b: number; dist: number }[] = [];
 
-        let rawMassSum = 0;
         for (let i = 1; i < this.params.count; i++) {
             const angle = Math.random() * Math.PI * 2;
             const dist = DISK_INNER_RADIUS + Math.random() * GALAXY_RADIUS;
@@ -303,20 +324,20 @@ export class SimulationManager {
             const mass = Math.pow(u * (maxP - minP) + minP, -1 / p);
 
             // Colour reflects the *stellar* mass (Salpeter, 0.1-50 Msun), so it
-            // stays consistent across presets even when we rescale the physical
+            // stays consistent across presets even when we overwrite the physical
             // mass below for the self-gravitating disk.
             const [r, g, b] = massToColor(mass);
-            rawMassSum += mass;
             particles.push({ x, y, vx: 0, vy: 0, mass, r, g, b, dist });
         }
 
         if (selfGrav) {
-            // Normalise the whole disk to a fixed total mass so its self-gravity
-            // dominates the SMBH and halo (and is independent of star count).
-            // Each particle becomes a "macro-particle" tracing a mass element,
-            // not a single star -- the standard trade-off in N-body galaxies.
-            const scale = SELF_GRAV_DISK_MASS / rawMassSum;
-            for (const part of particles) part.mass *= scale;
+            // Equal-mass macro-particles tracing a fixed total disk mass (so the
+            // disk's self-gravity dominates the SMBH/halo and is independent of
+            // star count). Unlike rescaling the Salpeter *sum*, this avoids a
+            // ~400x mass spread whose heavy tail would scatter neighbours and
+            // gravitationally eject the SMBH. Colours still encode stellar mass.
+            const equalMass = SELF_GRAV_DISK_MASS / (this.params.count - 1);
+            for (const part of particles) part.mass = equalMass;
             this.diskMass = SELF_GRAV_DISK_MASS;
         } else {
             this.diskMass = 0;
@@ -348,6 +369,32 @@ export class SimulationManager {
         // central core, so it occupies one slot; add 1 to the count of qualifying
         // heavy stars (indices 1..tempActiveCount) so none are demoted to passive.
         this.params.activeCount = tempActiveCount + 1;
+
+        if (selfGrav) this.removeNetMomentum();
+    }
+
+    /**
+     * Subtracts the mass-weighted mean velocity from every body so the system
+     * carries zero net linear momentum. Without this, Poisson asymmetry in the
+     * disk's random realisation gives the whole galaxy (SMBH included) a small
+     * bulk drift across the view. Only used by the self-gravitating preset.
+     */
+    private removeNetMomentum() {
+        const n = this.params.count;
+        let pxSum = 0, pySum = 0, mSum = 0;
+        for (let i = 0; i < n; i++) {
+            const m = this.state.mass[i];
+            pxSum += m * this.state.velocityX[i];
+            pySum += m * this.state.velocityY[i];
+            mSum += m;
+        }
+        if (mSum <= 0) return;
+        const vxMean = pxSum / mSum;
+        const vyMean = pySum / mSum;
+        for (let i = 0; i < n; i++) {
+            this.state.velocityX[i] -= vxMean;
+            this.state.velocityY[i] -= vyMean;
+        }
     }
 
     /**
@@ -371,6 +418,25 @@ export class SimulationManager {
             this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
             this.webGpuEngine.updateUniforms(this.params.dt, this.params);
         }
+    }
+
+    /**
+     * Softening to use given the current galaxy mode and engine. The "core" preset
+     * uses the engine preset's softening; the self-gravitating preset overrides it
+     * with ~the disk's mean inter-particle spacing so the disk is collisionless
+     * rather than exploding (see {@link SELF_GRAV_SOFTENING_FACTOR}). Auto-scales
+     * with star count. The base is taken from the engine preset (not the current
+     * params.softening) so a stale self-gravitating value can't leak back into the
+     * "core" preset when toggling modes on an engine that doesn't reset it.
+     */
+    private effectiveSoftening(): number {
+        const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
+        const base = preset ? preset.softening : ENGINE_PRESETS.brute.softening;
+        if (this.params.galaxyMode !== 'selfgrav') return base;
+        const outer = DISK_INNER_RADIUS + GALAXY_RADIUS;
+        const diskArea = Math.PI * (outer * outer - DISK_INNER_RADIUS * DISK_INNER_RADIUS);
+        const spacing = Math.sqrt(diskArea / Math.max(this.params.count - 1, 1));
+        return Math.max(base, SELF_GRAV_SOFTENING_FACTOR * spacing);
     }
 
     /**
@@ -494,6 +560,10 @@ export class SimulationManager {
             this.params.softening = preset.softening;
             this.params.dt = preset.timeStep;
         }
+        // The preset resets softening to the core-preset value; restore the
+        // larger self-gravitating softening (no-op for the "core" preset) before
+        // softResetVelocities recomputes the IC, which reads params.softening.
+        this.params.softening = this.effectiveSoftening();
 
         this.softResetVelocities();
 
