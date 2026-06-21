@@ -476,6 +476,29 @@ export class SimulationManager {
             this.state.colors[i * 3 + 2] = b;
         }
 
+        // Recenter the disk's centre of mass on the origin. The dark-matter halo
+        // is pinned to the origin (both haloAcc and the engine's DM term are
+        // functions of distance from it), as are buildRotationCurve's test rings.
+        // The random realisation leaves a Poisson COM offset (~Rd/sqrt(N)) that
+        // would let the halo pull the disk asymmetrically (bulk sloshing) and bias
+        // the measured rotation curve. Masses are equal, so this is a plain mean.
+        // (Net *momentum* is handled later by removeNetMomentum; net angular
+        // momentum is the intended ordered rotation and is left untouched.)
+        let xMean = 0, yMean = 0;
+        for (let i = 0; i < n; i++) {
+            xMean += this.state.positionX[i];
+            yMean += this.state.positionY[i];
+        }
+        xMean /= n;
+        yMean /= n;
+        for (let i = 0; i < n; i++) {
+            this.state.positionX[i] -= xMean;
+            this.state.positionY[i] -= yMean;
+            // Recompute radii from the recentred positions so radius and direction
+            // stay consistent for computeStarVelocity.
+            radii[i] = Math.hypot(this.state.positionX[i], this.state.positionY[i]);
+        }
+
         // Tabulate the azimuthally-averaged radial acceleration and surface density
         // from the realized particle distribution, then warm each star to the
         // target Q using those *measured* profiles - so Q is self-consistent with
@@ -517,6 +540,14 @@ export class SimulationManager {
 
         // Every macro-particle is equal mass and self-gravitating.
         this.params.activeCount = n;
+
+        // Stagger the (now synchronized) velocities half a step ahead using each
+        // particle's *true* initial acceleration, so the leapfrog offset is exactly
+        // consistent with the engine's first force evaluation (the per-star half-kick
+        // in computeStarVelocity used only the azimuthally-averaged mean field). Must
+        // run after the final dt is set above and after all velocities are assigned.
+        this.applySelfGravHalfKick();
+
         this.removeNetMomentum();
     }
 
@@ -556,6 +587,57 @@ export class SimulationManager {
         for (let i = 0; i < n; i++) {
             this.state.velocityX[i] -= vxMean;
             this.state.velocityY[i] -= vyMean;
+        }
+    }
+
+    /**
+     * Applies the leapfrog half-kick (v += a*dt/2) to the self-gravitating disk
+     * using each particle's *true* initial acceleration, mirroring the
+     * {@link BruteForceEngine} kernel exactly so the staggered velocities match the
+     * integrator's first force evaluation: a_i = sum_j G*m_j*d/(d^2+eps^2)^1.5 plus
+     * the origin-pinned dark-matter halo (no SMBH term for selfgrav). This is a
+     * one-time O(N^2) pass at init (~1e8 ops at N=1e4, same order as
+     * buildRotationCurve), acceptable for initial conditions. Must run after the
+     * final dt is set and after synchronized velocities are assigned.
+     */
+    private applySelfGravHalfKick() {
+        const n = this.params.count;
+        const px = this.state.positionX;
+        const py = this.state.positionY;
+        const mass = this.state.mass;
+        const G = this.params.gravity;
+        const softeningSq = this.params.softening * this.params.softening;
+        const halfDt = this.params.dt / 2;
+
+        for (let i = 0; i < n; i++) {
+            const pix = px[i];
+            const piy = py[i];
+            let ax = 0;
+            let ay = 0;
+
+            // Pairwise self-gravity (mirrors BruteForceEngine: distSq includes eps^2).
+            for (let j = 0; j < n; j++) {
+                if (j === i) continue;
+                const dx = px[j] - pix;
+                const dy = py[j] - piy;
+                const distSq = dx * dx + dy * dy + softeningSq;
+                const dist = Math.sqrt(distSq);
+                const aBase = (G * mass[j]) / (distSq * dist);
+                ax += aBase * dx;
+                ay += aBase * dy;
+            }
+
+            // Dark-matter halo, inward along the radial direction. haloAcc(r)/r
+            // equals the engine's aDM_base, so this matches the engine's DM term.
+            const r = Math.hypot(pix, piy);
+            if (r > 0) {
+                const aHalo = this.haloAcc(r);
+                ax -= (pix / r) * aHalo;
+                ay -= (piy / r) * aHalo;
+            }
+
+            this.state.velocityX[i] += ax * halfDt;
+            this.state.velocityY[i] += ay * halfDt;
         }
     }
 
@@ -790,7 +872,7 @@ export class SimulationManager {
      */
     private buildRotationCurve() {
         const Nr = 128;
-        const Naz = 8;
+        const Naz = 32;
         const n = this.params.count;
         const G = this.params.gravity;
         const epsSq = this.params.softening * this.params.softening;
@@ -838,7 +920,22 @@ export class SimulationManager {
             acc[k] = aRadSum / Naz + this.haloAcc(rk);
         }
 
-        this.rotCurveAcc = acc;
+        // Light boxcar smoothing (half-width 1 bin) to suppress residual Poisson
+        // noise in the table without flattening the steep inner rise of v_c.
+        // Mirrors buildSurfaceDensity; acc[0] (the r=0 zero) is left untouched.
+        const smoothed = new Float64Array(Nr);
+        smoothed[0] = acc[0];
+        const hAcc = 1;
+        for (let k = 1; k < Nr; k++) {
+            let sum = 0, cnt = 0;
+            for (let j = Math.max(1, k - hAcc); j <= Math.min(Nr - 1, k + hAcc); j++) {
+                sum += acc[j];
+                cnt++;
+            }
+            smoothed[k] = sum / cnt;
+        }
+
+        this.rotCurveAcc = smoothed;
         this.rotCurveRMin = rMin;
         this.rotCurveRMax = rMax;
     }
@@ -880,7 +977,15 @@ export class SimulationManager {
      * rotation curve via central finite difference.
      */
     private kappaAt(r: number): number {
-        const dr = Math.max(r * 0.01, 1e-3);
+        // Differentiate over >=2 rotation-curve grid cells, not a single linear
+        // interpolation segment, so the central difference averages out the
+        // per-cell staircase / Poisson noise of the table instead of reading the
+        // slope of one segment.
+        const acc = this.rotCurveAcc;
+        const hGrid = acc && acc.length > 1
+            ? (this.rotCurveRMax - this.rotCurveRMin) / (acc.length - 1)
+            : 1e-3;
+        const dr = Math.max(2 * hGrid, r * 0.05);
         const rMinus = Math.max(r - dr, 1e-6);
         const vP = this.vCircAt(r + dr);
         const vM = this.vCircAt(rMinus);
@@ -891,10 +996,26 @@ export class SimulationManager {
 
     /**
      * Radial velocity dispersion for the target Toomre Q at radius `r`:
-     * Q = sigma_R * kappa / (3.36 * G * Sigma) => sigma_R = Q * 3.36 * G * Sigma / kappa.
+     * Q = sigma_R * kappa / (3.36 * G * Sigma) => sigma_R = Q * 3.36 * G * Sigma / kappa,
+     * corrected for the engine's Plummer softening.
+     *
+     * The running engine softens gravity with a Plummer kernel (eps = params.softening,
+     * on the order of the inter-particle spacing - not negligible). For a razor-thin disk
+     * this reduces the in-plane self-gravity of a surface-density perturbation at wavenumber
+     * k by exactly exp(-k*eps): the 2-D Hankel transform of 1/sqrt(r^2+eps^2) is
+     * (2*pi/k)*exp(-k*eps). Evaluating at the Toomre most-unstable wavenumber
+     * k_crit = kappa^2 / (2*pi*G*Sigma) and folding exp(-k_crit*eps) into the effective
+     * surface density makes the *physical* (unsoftened) swing-amplification Q equal TOOMRE_Q,
+     * instead of the softened disk being silently over-stabilised (~10% near R_d, up to ~25%
+     * in the inner disk).
      */
     private sigmaRAt(r: number): number {
-        return (TOOMRE_Q * 3.36 * this.params.gravity * this.diskSurfaceDensity(r)) / this.kappaAt(r);
+        const Sigma = this.diskSurfaceDensity(r); // already floored > 0
+        const kappa = this.kappaAt(r);
+        const eps = this.params.softening;
+        const kCrit = (kappa * kappa) / (2 * Math.PI * this.params.gravity * Sigma);
+        const soften = Math.exp(-kCrit * eps);
+        return (TOOMRE_Q * 3.36 * this.params.gravity * Sigma * soften) / kappa;
     }
 
     /**
@@ -916,13 +1037,11 @@ export class SimulationManager {
         const tx = -uy;
         const ty = ux;
 
-        let aTot: number;
         let vx: number;
         let vy: number;
 
         if (this.diskMass > 0) {
             // --- Self-gravitating disk: measured rotation curve + Toomre-Q warming ---
-            aTot = this.aRadInterp(r);
             const vCirc = this.vCircAt(r);
             const omega = vCirc / r;
             const kappa = this.kappaAt(r);
@@ -956,21 +1075,30 @@ export class SimulationManager {
 
             vx = tx * vBarPhi + ux * dvR + tx * dvPhi;
             vy = ty * vBarPhi + uy * dvR + ty * dvPhi;
+
+            // Assign the *synchronized* velocity only. The leapfrog half-step
+            // offset is applied later in initSelfGravDisk by applySelfGravHalfKick,
+            // which uses each particle's true (Poisson) acceleration rather than the
+            // azimuthally-averaged mean field, so the stagger matches the engine.
+            this.state.velocityX[i] = vx;
+            this.state.velocityY[i] = vy;
         } else {
             // --- Core-dominated: near-circular with mild scatter ---
-            aTot = this.radialAcc(r);
+            const aTot = this.radialAcc(r);
             const vCirc = Math.sqrt(Math.max(aTot * r, 0));
             const velocity = vCirc * (0.9 + Math.random() * 0.2);
             vx = tx * velocity;
             vy = ty * velocity;
-        }
 
-        // Leapfrog half-step offset using the (inward) radial acceleration, so
-        // velocity stays staggered half a step ahead of position.
-        const ax = -ux * aTot;
-        const ay = -uy * aTot;
-        this.state.velocityX[i] = vx + ax * (this.params.dt / 2);
-        this.state.velocityY[i] = vy + ay * (this.params.dt / 2);
+            // Leapfrog half-step offset using the (inward) radial acceleration, so
+            // velocity stays staggered half a step ahead of position. The analytic
+            // radialAcc already is this test particle's true force, so no O(N^2)
+            // pass is needed.
+            const ax = -ux * aTot;
+            const ay = -uy * aTot;
+            this.state.velocityX[i] = vx + ax * (this.params.dt / 2);
+            this.state.velocityY[i] = vy + ay * (this.params.dt / 2);
+        }
     }
 
     /**

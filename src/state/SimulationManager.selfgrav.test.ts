@@ -103,6 +103,20 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         expect(Math.hypot(px, py) / m).toBeLessThan(1e-3);
     });
 
+    it('centres the disk COM on the origin so the origin-pinned halo pulls symmetrically', () => {
+        const sim = makeSim('selfgrav');
+        sim.initGalaxy();
+        let rx = 0, ry = 0, m = 0;
+        for (let i = 0; i < sim.params.count; i++) {
+            rx += sim.state.mass[i] * sim.state.positionX[i];
+            ry += sim.state.mass[i] * sim.state.positionY[i];
+            m += sim.state.mass[i];
+        }
+        // The subtraction is exact up to Float32 storage rounding, so the residual
+        // mass-weighted COM offset should be tiny relative to the disk scale length.
+        expect(Math.hypot(rx, ry) / m).toBeLessThan(1e-3);
+    });
+
     it('derives a dt that resolves the disk and never exceeds the preset dt', () => {
         const sim = makeSim('selfgrav');
         sim.initGalaxy();
@@ -128,6 +142,38 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         }
         const stepsPerOrbit = (2 * Math.PI / omegaMax) / sim.params.dt;
         expect(stepsPerOrbit).toBeGreaterThanOrEqual(30);
+    });
+
+    it('produces a smooth epicyclic frequency kappa(R) with no per-grid-cell staircase', () => {
+        const sim = makeSim('selfgrav');
+        sim.initGalaxy();
+
+        // Reach through the runtime for the private kappaAt (TS `private` is
+        // compile-time only) and sample it on a fine radius grid, finer than the
+        // rotation-curve table spacing so a per-cell staircase would show up as
+        // large cell-to-cell jumps.
+        const s = sim as any;
+        const rLo = 0.2 * DISK_SCALE_LENGTH;
+        const rHi = 3 * DISK_SCALE_LENGTH;
+        const N = 200;
+        const kappa: number[] = [];
+        for (let i = 0; i < N; i++) {
+            const r = rLo + ((rHi - rLo) * i) / (N - 1);
+            const k = s.kappaAt(r);
+            expect(Number.isFinite(k)).toBe(true);
+            expect(k).toBeGreaterThan(0);
+            kappa.push(k);
+        }
+
+        // Successive samples should vary smoothly: the widened stencil and the
+        // table smoothing remove the staircase, so the max relative cell-to-cell
+        // jump stays modest (the staircased derivative produced much larger jumps).
+        let maxRelJump = 0;
+        for (let i = 1; i < kappa.length; i++) {
+            const rel = Math.abs(kappa[i] - kappa[i - 1]) / kappa[i];
+            if (rel > maxRelJump) maxRelJump = rel;
+        }
+        expect(maxRelJump).toBeLessThan(0.05);
     });
 
     it('stays bound when stepped: no blow-out and no runaway expansion', () => {
