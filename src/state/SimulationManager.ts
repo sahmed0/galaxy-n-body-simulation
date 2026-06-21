@@ -129,6 +129,28 @@ export const ENCOUNTER_SAFETY = 0.05;
 export const MIN_DT_FRACTION = 1 / 64;
 
 /**
+ * Number of *active* (field-generating) macro-particles in the self-gravitating
+ * preset. The first `SELF_GRAV_ACTIVE_COUNT` indices carry the entire disk mass
+ * (m = Mdisk / N_active each) and source the gravitational field; the remaining
+ * particles are *passive* tracers that feel the active field + halo but neither
+ * exert gravity nor interact with each other. The engines distinguish the two
+ * sets purely by index (`j < activeCount`), so passive particles still render
+ * identically to active ones.
+ *
+ * This is a performance/fidelity knob, not a physical constant. Force cost is
+ * O(N_active x N_total) instead of O(N_total^2), so raising the total particle
+ * count past the all-active frame-rate ceiling stays affordable as long as
+ * N_active is held here. The trade-off is physical: the self-gravitating disk's
+ * spiral structure is a *collective* effect, so a sparse active backbone gives a
+ * grainier field and faster two-body heating - the effective Toomre Q is set by
+ * N_active, not N_total. Values in the high thousands keep recognisable spiral
+ * arms; pushing it very low coarsens the field noticeably. When it meets or
+ * exceeds the particle count the split is inert and every particle is active
+ * (the original behaviour).
+ */
+export const SELF_GRAV_ACTIVE_COUNT = 3000;
+
+/**
  * Manages the state, memory, and lifecycle of the N-Body physics simulation.
  */
 export class SimulationManager {
@@ -223,6 +245,10 @@ export class SimulationManager {
         count: 10000,
         useActivePassive: true,
         activeCount: 0,
+        // Self-gravitating preset only: number of field-generating macro-particles
+        // (the first `selfGravActiveCount` indices). The rest are passive tracers.
+        // See {@link SELF_GRAV_ACTIVE_COUNT}. Inert when >= count (all active).
+        selfGravActiveCount: SELF_GRAV_ACTIVE_COUNT,
         theta: 1.0,
         massThreshold: 1.0,
         isPaused: false,
@@ -230,7 +256,7 @@ export class SimulationManager {
         cameraX: 0.0,
         cameraY: 0.0,
         cameraTilt: 0.6,
-        dmStrength: 400.0,
+        dmStrength: 250.0,
         dmCoreRadius: 1200.0,
         shouldShowQuadTree: false,
     };
@@ -436,17 +462,39 @@ export class SimulationManager {
     }
 
     /**
-     * Self-gravitating preset: an exponential disk of equal-mass macro-particles
-     * embedded in the dark-matter halo, with no central point mass. Velocities
-     * are set from the *measured* 2-D rotation curve (so the disk starts in
-     * centrifugal balance with the engine's actual forces) and warmed to a target
-     * Toomre Q, producing swing-amplified transient spiral arms.
+     * Self-gravitating preset: an exponential disk of macro-particles embedded in
+     * the dark-matter halo, with no central point mass. Velocities are set from the
+     * *measured* 2-D rotation curve (so the disk starts in centrifugal balance with
+     * the engine's actual forces) and warmed to a target Toomre Q, producing
+     * swing-amplified transient spiral arms.
+     *
+     * Active/passive split (see {@link SELF_GRAV_ACTIVE_COUNT}): the first
+     * `nActive` particles carry the entire disk mass and source the field; the rest
+     * are passive tracers that feel the active field + halo but do not gravitate.
+     * Because the radii are sampled i.i.d. from the same exponential profile, the
+     * first `nActive` indices are already a fair subsample - no reordering needed.
+     * Every particle (active or passive) is given the same per-active-particle mass
+     * so they render identically; the engines and the field-measurement helpers
+     * (`buildRotationCurve`, `buildSurfaceDensity`, `applySelfGravHalfKick`) treat
+     * the split purely by index `[0, nActive)`, never by mass. When `nActive == n`
+     * the split is inert and the disk is fully self-gravitating as before.
      */
     private initSelfGravDisk() {
         const n = this.params.count;
+        const nActive = this.selfGravActiveCount();
+        // The active set carries the whole disk mass, so each active particle is
+        // heavier (Mdisk / nActive). Passive tracers are given the same value for
+        // render parity; it never enters the force sums. Fix activeCount now, before
+        // the field helpers below read it via selfGravActiveCount().
+        this.params.activeCount = nActive;
+        // The split's correctness depends on the engine honouring activeCount:
+        // passive tracers carry a (render-only) nonzero mass, so if the engine
+        // summed over every particle instead the disk would be n/nActive times too
+        // massive. Make the invariant explicit rather than relying on the default.
+        this.params.useActivePassive = true;
         const Rd = DISK_SCALE_LENGTH;
         const Rmax = DISK_TRUNCATION * Rd;
-        const equalMass = SELF_GRAV_DISK_MASS / n;
+        const seedMass = SELF_GRAV_DISK_MASS / nActive;
         this.diskMass = SELF_GRAV_DISK_MASS;
 
         const radii = new Float64Array(n);
@@ -466,7 +514,7 @@ export class SimulationManager {
 
             this.state.positionX[i] = Math.cos(angle) * R;
             this.state.positionY[i] = Math.sin(angle) * R;
-            this.state.mass[i] = equalMass;
+            this.state.mass[i] = seedMass;
 
             // Colour still encodes a sampled stellar (Salpeter) mass for visual
             // consistency with the core preset; the physical mass is equal.
@@ -521,7 +569,9 @@ export class SimulationManager {
             let mTarget = ((f / (1 - f)) * vHalo2) / vDisk2_perMass;
             // Clamp to a sane positive range relative to the seed mass.
             mTarget = Math.min(Math.max(mTarget, M0 * 1e-3), M0 * 1e6);
-            const m = mTarget / n;
+            // Split the calibrated total over the active set; passive tracers get
+            // the same value for render parity (it is never summed as a source).
+            const m = mTarget / nActive;
             for (let i = 0; i < n; i++) this.state.mass[i] = m;
             this.diskMass = mTarget;
             // Rebuild the rotation curve: the disk accel now scales to the
@@ -534,12 +584,13 @@ export class SimulationManager {
         // curve, BEFORE computeStarVelocity applies its leapfrog half-step (which
         // reads params.dt).
         this.params.dt = this.computeAdaptiveTimestep();
+        // Warm every particle - active and passive alike - to the same Q-derived
+        // dispersions so the passive cloud shares the active disk's temperature and
+        // traces the same spiral structure. (params.activeCount was fixed at the
+        // top so the field helpers above already used the active set as sources.)
         for (let i = 0; i < n; i++) {
             this.computeStarVelocity(i, radii[i]);
         }
-
-        // Every macro-particle is equal mass and self-gravitating.
-        this.params.activeCount = n;
 
         // Stagger the (now synchronized) velocities half a step ahead using each
         // particle's *true* initial acceleration, so the leapfrog offset is exactly
@@ -602,6 +653,13 @@ export class SimulationManager {
      */
     private applySelfGravHalfKick() {
         const n = this.params.count;
+        // Force sources are the active set only, exactly as the engine does it: an
+        // active particle feels the other active particles, a passive particle
+        // feels the active particles, and neither feels the passive set. Restricting
+        // the inner loop to [0, nSrc) is both the correct mirror and what turns this
+        // one-time pass from O(N^2) into O(N * N_active) so a large passive cloud
+        // does not stall init.
+        const nSrc = this.selfGravActiveCount();
         const px = this.state.positionX;
         const py = this.state.positionY;
         const mass = this.state.mass;
@@ -616,7 +674,7 @@ export class SimulationManager {
             let ay = 0;
 
             // Pairwise self-gravity (mirrors BruteForceEngine: distSq includes eps^2).
-            for (let j = 0; j < n; j++) {
+            for (let j = 0; j < nSrc; j++) {
                 if (j === i) continue;
                 const dx = px[j] - pix;
                 const dy = py[j] - piy;
@@ -692,12 +750,30 @@ export class SimulationManager {
      * half-mass radius (R_1/2 ~ 1.68 R_d), where most of the mass and the relevant
      * dynamics live: spacing = 1/sqrt(n_surf), n_surf = Sigma(R_1/2) / m_particle.
      */
+    /**
+     * Number of *active* (field-generating) macro-particles in the
+     * self-gravitating disk: the first `selfGravActiveCount` indices, clamped to
+     * the particle count (and at least 1). When it equals the count the
+     * active/passive split is inert and every particle is active. Derived from the
+     * parameter rather than `params.activeCount` so it is correct regardless of
+     * call order (e.g. {@link effectiveSoftening} runs before
+     * {@link initSelfGravDisk} sets `params.activeCount`). See
+     * {@link SELF_GRAV_ACTIVE_COUNT}.
+     */
+    private selfGravActiveCount(): number {
+        const n = Math.max(this.params.count, 1);
+        return Math.max(1, Math.min(this.params.selfGravActiveCount, n));
+    }
+
     private effectiveSoftening(): number {
         const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
         const base = preset ? preset.softening : ENGINE_PRESETS.brute.softening;
         if (this.params.galaxyMode !== 'selfgrav') return base;
-        const n = Math.max(this.params.count, 1);
-        const mParticle = SELF_GRAV_DISK_MASS / n;
+        // Collisionality is set by the heavy *active* macro-particles (each carries
+        // Mdisk / N_active and sources the field), so the relevant mass and spacing
+        // are the active ones, not the full-count ones.
+        const nActive = this.selfGravActiveCount();
+        const mParticle = SELF_GRAV_DISK_MASS / nActive;
         const rHalf = 1.68 * DISK_SCALE_LENGTH;
         const sigma0 = SELF_GRAV_DISK_MASS / (2 * Math.PI * DISK_SCALE_LENGTH * DISK_SCALE_LENGTH);
         const sigmaHalf = sigma0 * Math.exp(-rHalf / DISK_SCALE_LENGTH);
@@ -749,10 +825,12 @@ export class SimulationManager {
             dt = Math.min(dt, (2 * Math.PI / omegaMax) / STEPS_PER_ORBIT);
         }
 
-        // limit 3: resolve a near-softening-length two-body encounter between the
-        // equal-mass macro-particles.
+        // limit 3: resolve a near-softening-length close encounter with a heavy
+        // *active* macro-particle (mass = Mdisk / N_active). Passive tracers are
+        // massless to the field but can still be flung by a close active pass, so
+        // the active particle mass sets the encounter timescale.
         const eps = this.effectiveSoftening();
-        const mParticle = this.diskMass / Math.max(this.params.count, 1);
+        const mParticle = this.diskMass / this.selfGravActiveCount();
         const G = this.params.gravity;
         if (mParticle > 0 && G > 0) {
             dt = Math.min(dt, ENCOUNTER_SAFETY * Math.sqrt((eps * eps * eps) / (G * mParticle)));
@@ -806,7 +884,11 @@ export class SimulationManager {
      */
     private buildSurfaceDensity() {
         const Nr = 100;
-        const n = this.params.count;
+        // Sum only the active set: it carries the full disk mass and sources the
+        // field, so its surface density is the one the Toomre-Q warming must use.
+        // Passive tracers share the active particles' render mass but must not be
+        // double-counted into the field's Sigma.
+        const nSrc = this.selfGravActiveCount();
         const rMax = DISK_TRUNCATION * DISK_SCALE_LENGTH;
         const dr = rMax / Nr;
         const px = this.state.positionX;
@@ -816,7 +898,7 @@ export class SimulationManager {
         // Mass per radial shell, converted to a surface density by shell area
         // pi*((k+1)^2 - k^2)*dr^2 = pi*(2k+1)*dr^2.
         const raw = new Float64Array(Nr);
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < nSrc; i++) {
             const r = Math.sqrt(px[i] * px[i] + py[i] * py[i]);
             const k = Math.floor(r / dr);
             if (k >= 0 && k < Nr) raw[k] += mass[i];
@@ -873,7 +955,12 @@ export class SimulationManager {
     private buildRotationCurve() {
         const Nr = 128;
         const Naz = 32;
-        const n = this.params.count;
+        // Only the active set sources the field (mirrors the engine, which sums
+        // over [0, activeCount)); passive tracers carry a render mass but do not
+        // gravitate. The active particles are an i.i.d. subsample of the same
+        // exponential profile, so they reproduce the field shape (with sqrt(N)
+        // more shot noise) at the full disk mass they collectively carry.
+        const nSrc = this.selfGravActiveCount();
         const G = this.params.gravity;
         const epsSq = this.params.softening * this.params.softening;
         const px = this.state.positionX;
@@ -905,7 +992,7 @@ export class SimulationManager {
                 const ty = sin[a] * rk;
                 let axTot = 0;
                 let ayTot = 0;
-                for (let j = 0; j < n; j++) {
+                for (let j = 0; j < nSrc; j++) {
                     const dx = px[j] - tx;
                     const dy = py[j] - ty;
                     const distSq = dx * dx + dy * dy + epsSq;

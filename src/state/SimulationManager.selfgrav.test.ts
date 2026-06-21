@@ -202,6 +202,80 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 });
 
+describe('SimulationManager - self-gravitating active/passive split', () => {
+    /** Builds a selfgrav sim with the active/passive split engaged. */
+    function makeSplitSim(count = 4000, nActive = 1000) {
+        const sim = makeSim('selfgrav', count);
+        sim.params.selfGravActiveCount = nActive;
+        return sim;
+    }
+
+    it('marks only the first selfGravActiveCount particles active', () => {
+        const sim = makeSplitSim(4000, 1000);
+        sim.initGalaxy();
+        expect(sim.params.activeCount).toBe(1000);
+        // Sanity: the split must actually be engaged (not clamped to count).
+        expect(sim.params.activeCount).toBeLessThan(sim.params.count);
+    });
+
+    it('puts the full calibrated disk mass on the active set (passive tracers share the render mass)', () => {
+        const sim = makeSplitSim(4000, 1000);
+        sim.initGalaxy();
+
+        // Every particle carries the same per-active-particle mass = diskMass/nActive
+        // (passive ones for render parity; they are never summed as a field source).
+        const nActive = sim.params.activeCount;
+        const expected = sim.diskMass / nActive;
+        let activeSum = 0;
+        for (let i = 0; i < sim.params.count; i++) {
+            expect(Math.abs(sim.state.mass[i] / expected - 1)).toBeLessThan(1e-4);
+            if (i < nActive) activeSum += sim.state.mass[i];
+        }
+        // The field-generating (active) mass totals the calibrated disk mass.
+        expect(Math.abs(activeSum / sim.diskMass - 1)).toBeLessThan(1e-4);
+    });
+
+    it('still calibrates f_disk at 2.2 R_d from the active-set field', () => {
+        const sim = makeSplitSim(4000, 1000);
+        sim.initGalaxy();
+        const fDisk = sim.diskFractionAt(2.2 * DISK_SCALE_LENGTH);
+        expect(Math.abs(fDisk - TARGET_F_DISK)).toBeLessThan(0.05);
+    });
+
+    it('is inert when selfGravActiveCount >= count (every particle active)', () => {
+        const sim = makeSim('selfgrav', 1500);
+        sim.params.selfGravActiveCount = 8000; // > count
+        sim.initGalaxy();
+        expect(sim.params.activeCount).toBe(sim.params.count);
+    });
+
+    it('keeps the passive tracer cloud bound when stepped', () => {
+        const sim = makeSplitSim(4000, 1000);
+        sim.initGalaxy();
+        const r0 = maxRadius(sim);
+        const rms0 = rmsRadius(sim);
+
+        // The engine reads activeCount + useActivePassive: active feel active,
+        // passive feel active, neither feels passive.
+        const engine = new BruteForceEngine(sim.state);
+        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+
+        // The grainier active backbone makes the disk a touch hotter, so allow a
+        // slightly larger flung fraction than the fully-sampled disk, but it must
+        // still hold together rather than blow out.
+        let flung = 0;
+        for (let i = 0; i < sim.params.count; i++) {
+            const r = Math.hypot(sim.state.positionX[i], sim.state.positionY[i]);
+            if (r > 3 * r0) flung++;
+        }
+        expect(flung / sim.params.count).toBeLessThan(0.05);
+
+        const rms1 = rmsRadius(sim);
+        expect(rms1 / rms0).toBeGreaterThan(0.5);
+        expect(rms1 / rms0).toBeLessThan(2.0);
+    });
+});
+
 describe('SimulationManager - core preset is unchanged', () => {
     it('keeps the preset softening (1.0) and an unequal Salpeter mass spectrum', () => {
         const sim = makeSim('core');
