@@ -14,7 +14,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    SELF_GRAV_DISK_MASS,
+    ENGINE_PRESETS,
+    MIN_DT_FRACTION,
+    DISK_SCALE_LENGTH,
+    TARGET_F_DISK,
 } from './SimulationManager';
 import { BruteForceEngine } from '../physics';
 
@@ -50,22 +53,33 @@ function rmsRadius(sim: SimulationManager): number {
 }
 
 describe('SimulationManager - self-gravitating initial conditions', () => {
-    it('uses equal-mass macro-particles (no central point mass) totalling SELF_GRAV_DISK_MASS', () => {
+    it('uses equal-mass macro-particles (no central point mass) totalling the calibrated diskMass', () => {
         const sim = makeSim('selfgrav');
         sim.initGalaxy();
 
-        // Every particle - including index 0 - is an equal-mass disk macro-particle.
-        const expected = SELF_GRAV_DISK_MASS / sim.params.count;
+        // The total disk mass is calibrated (not the seed constant); every particle
+        // - including index 0 - is an equal-mass disk macro-particle of diskMass/count.
+        const expected = sim.diskMass / sim.params.count;
         let total = 0;
         for (let i = 0; i < sim.params.count; i++) {
-            expect(sim.state.mass[i]).toBeCloseTo(expected, 0);
+            // Relative tolerance: the calibrated mass can be large, so an absolute
+            // toBeCloseTo would fail purely on float magnitude.
+            expect(Math.abs(sim.state.mass[i] / expected - 1)).toBeLessThan(1e-4);
             total += sim.state.mass[i];
         }
         // Float32 storage accumulates a tiny rounding error over N particles.
-        expect(Math.abs(total / SELF_GRAV_DISK_MASS - 1)).toBeLessThan(1e-4);
-        expect(sim.diskMass).toBe(SELF_GRAV_DISK_MASS);
+        expect(Math.abs(total / sim.diskMass - 1)).toBeLessThan(1e-4);
         // The whole disk self-gravitates: every particle is active.
         expect(sim.params.activeCount).toBe(sim.params.count);
+    });
+
+    it('calibrates the disk mass so f_disk at 2.2 R_d hits TARGET_F_DISK', () => {
+        const sim = makeSim('selfgrav');
+        sim.initGalaxy();
+
+        // The realized particle field carries Poisson scatter, so allow a modest band.
+        const fDisk = sim.diskFractionAt(2.2 * DISK_SCALE_LENGTH);
+        expect(Math.abs(fDisk - TARGET_F_DISK)).toBeLessThan(0.05);
     });
 
     it('softens on the order of the inter-particle spacing, not the core preset 1.0', () => {
@@ -87,6 +101,33 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         }
         // Mean speed per unit mass should be negligible vs orbital speeds.
         expect(Math.hypot(px, py) / m).toBeLessThan(1e-3);
+    });
+
+    it('derives a dt that resolves the disk and never exceeds the preset dt', () => {
+        const sim = makeSim('selfgrav');
+        sim.initGalaxy();
+
+        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+
+        // Adaptive dt must not run faster than the engine preset...
+        expect(sim.params.dt).toBeLessThanOrEqual(presetDt);
+        // ...nor collapse below the floor that guards against a stalled sim.
+        expect(sim.params.dt).toBeGreaterThanOrEqual(presetDt * MIN_DT_FRACTION);
+
+        // The fastest orbit (peak angular frequency over the measured rotation
+        // curve) must be resolved by at least ~30 leapfrog steps. Reach through
+        // the runtime for the private curve (TS `private` is compile-time only).
+        const s = sim as any;
+        const acc: Float64Array = s.rotCurveAcc;
+        let omegaMax = 0;
+        for (let k = 0; k < acc.length; k++) {
+            const rk = s.rotCurveRMin + ((s.rotCurveRMax - s.rotCurveRMin) * k) / (acc.length - 1);
+            if (rk <= 0) continue;
+            const omega = s.vCircAt(rk) / rk;
+            if (omega > omegaMax) omegaMax = omega;
+        }
+        const stepsPerOrbit = (2 * Math.PI / omegaMax) / sim.params.dt;
+        expect(stepsPerOrbit).toBeGreaterThanOrEqual(30);
     });
 
     it('stays bound when stepped: no blow-out and no runaway expansion', () => {
@@ -122,6 +163,10 @@ describe('SimulationManager - core preset is unchanged', () => {
 
         expect(sim.params.softening).toBe(1.0);
         expect(sim.diskMass).toBe(0);
+
+        // The adaptive timestep is a no-op for the core preset: dt stays the
+        // fixed engine preset value.
+        expect(sim.params.dt).toBe(ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep);
 
         // Salpeter sampling => a wide spread of disk masses (not all equal).
         let min = Infinity, max = -Infinity;

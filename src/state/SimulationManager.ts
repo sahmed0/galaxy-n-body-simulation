@@ -34,14 +34,14 @@ export const GALAXY_RADIUS = 500;
 /**
  * Inner radius of the "core"-preset annulus (see {@link GALAXY_RADIUS}).
  */
-export const DISK_INNER_RADIUS = 0;
+export const DISK_INNER_RADIUS = 50;
 
 /**
  * Mass of the central core object (SMBH) in the "core" galaxy preset. The
  * self-gravitating preset has no central point mass: its rotation is set by the
  * disk's own gravity plus the dark-matter halo.
  */
-export const CORE_MASS = 1;
+export const CORE_MASS = 4.3e6;
 
 /**
  * Exponential scale length R_d of the self-gravitating disk:
@@ -59,14 +59,29 @@ export const DISK_SCALE_LENGTH = 150;
 export const DISK_TRUNCATION = 4;
 
 /**
- * Total disk mass used by the self-gravitating galaxy preset. Chosen (in
- * arbitrary code units) so the disk's collective self-gravity dominates where
- * spiral arms form while the dark-matter halo flattens the outer rotation curve.
- * Normalised to a fixed total (independent of particle count) so the dynamics -
- * and the Toomre Q below - stay consistent at any star count. Unused by the
- * "core" preset, where the disk is just the raw Salpeter masses (test particles).
+ * Provisional seed mass for the self-gravitating galaxy preset. The *final* disk
+ * mass is not this value: it is calibrated in {@link SimulationManager.initSelfGravDisk}
+ * so the measured disk fraction at the rotation-curve peak hits {@link TARGET_F_DISK}
+ * (see {@link DISK_FRACTION_RADIUS_FACTOR}). This constant only sets the mass at which
+ * the disk's force *shape* is first measured; since the disk's radial force is linear
+ * in total mass, its exact value cancels out of the calibration. Keep it a sane
+ * positive number. Unused by the "core" preset, where the disk is just the raw
+ * Salpeter masses (test particles).
  */
-export const SELF_GRAV_DISK_MASS = 13953;
+export const SELF_GRAV_DISK_MASS = 1e6;
+
+/**
+ * Target disk fraction f_disk = v_disk^2 / v_c^2 at the calibration radius, used to
+ * choose the self-gravitating disk's total mass. Maximal, spiral-forming disks sit at
+ * f_disk ~ 0.5-0.7; smaller values give a halo-dominated, featureless disk.
+ */
+export const TARGET_F_DISK = 0.6;
+
+/**
+ * Calibration radius (in disk scale lengths) at which {@link TARGET_F_DISK} is hit.
+ * R ~ 2.2 R_d is the peak of an exponential disk's rotation-curve contribution.
+ */
+export const DISK_FRACTION_RADIUS_FACTOR = 2.2;
 
 /**
  * Target Toomre Q for the self-gravitating preset. Q ~ 1.2-1.5 is the
@@ -88,6 +103,30 @@ export const TOOMRE_Q = 1.3;
  * collisionless system the model assumes.
  */
 export const SELF_GRAV_SOFTENING_FACTOR = 0.9;
+
+/**
+ * Minimum number of leapfrog steps used to resolve the fastest (innermost) orbit
+ * of the self-gravitating disk: the orbital-resolution dt limit is one orbital
+ * period at the peak angular frequency divided by this. See
+ * {@link SimulationManager.computeAdaptiveTimestep}.
+ */
+export const STEPS_PER_ORBIT = 50;
+
+/**
+ * Safety factor on the close-encounter dt limit for the heavy macro-particles:
+ * dt <= ENCOUNTER_SAFETY * sqrt(eps^3 / (G * m_particle)), the timestep that
+ * resolves a near-softening-length two-body encounter. See
+ * {@link SimulationManager.computeAdaptiveTimestep}.
+ */
+export const ENCOUNTER_SAFETY = 0.05;
+
+/**
+ * Floor on the adaptive timestep, as a fraction of the engine preset dt, so a
+ * pathological choice can't make the simulation crawl to a halt. Hitting this
+ * floor signals the disk mass / halo are mis-scaled (but is not treated as an
+ * error). See {@link SimulationManager.computeAdaptiveTimestep}.
+ */
+export const MIN_DT_FRACTION = 1 / 64;
 
 /**
  * Manages the state, memory, and lifecycle of the N-Body physics simulation.
@@ -144,6 +183,16 @@ export class SimulationManager {
     private rotCurveAcc: Float64Array | null = null;
     private rotCurveRMin = 0;
     private rotCurveRMax = 0;
+
+    /**
+     * Azimuthally-averaged surface-density profile (Sigma vs radius) of the
+     * self-gravitating disk, measured from the *realized* particle distribution
+     * (see {@link SimulationManager.buildSurfaceDensity}). Bin k is centred at
+     * (k + 0.5) * surfDensDr. Used to set the Toomre-Q velocity dispersion from
+     * the disk that actually exists rather than an assumed analytic Sigma.
+     */
+    private surfDensProfile: Float64Array | null = null;
+    private surfDensDr = 0;
 
     // Fixed-timestep accumulator: decouples simulation speed from display refresh
     // rate so the physics advances at the same wall-clock rate on 60/120/144 Hz.
@@ -214,6 +263,10 @@ export class SimulationManager {
                 // The preset resets softening to the core-preset value; restore
                 // the larger self-gravitating softening so the disk stays stable.
                 this.params.softening = this.effectiveSoftening();
+                // Likewise restore the disk's derived dt (no-op for the "core"
+                // preset) so a preset switch can't leave a stale preset dt on the
+                // self-gravitating disk.
+                this.params.dt = this.computeAdaptiveTimestep();
             } catch (err) {
                 this.markWebGpuUnavailable(err);
                 this.params.engineType = 'barnes';
@@ -393,16 +446,22 @@ export class SimulationManager {
         const n = this.params.count;
         const Rd = DISK_SCALE_LENGTH;
         const Rmax = DISK_TRUNCATION * Rd;
-        // Normalisation of the truncated exponential CDF on [0, Rmax].
-        const cdfMax = 1 - Math.exp(-Rmax / Rd);
         const equalMass = SELF_GRAV_DISK_MASS / n;
         this.diskMass = SELF_GRAV_DISK_MASS;
 
         const radii = new Float64Array(n);
         for (let i = 0; i < n; i++) {
             const angle = Math.random() * Math.PI * 2;
-            // Inverse-CDF sample of the truncated exponential surface density.
-            const R = -Rd * Math.log(1 - Math.random() * cdfMax);
+            // Sample R from the exponential-disk *radial* distribution
+            // dN/dR = 2*pi*R*Sigma(R) ∝ R*exp(-R/Rd): a Gamma(k=2, scale=Rd)
+            // deviate (the sum of two exponentials), truncated at Rmax by rejection.
+            // The 2*pi*R area Jacobian is essential - sampling exp(-R/Rd) directly
+            // realises Sigma ∝ exp(-R/Rd)/R, which is centrally divergent, not the
+            // intended exponential disk.
+            let R: number;
+            do {
+                R = -Rd * (Math.log(1 - Math.random()) + Math.log(1 - Math.random()));
+            } while (R > Rmax);
             radii[i] = R;
 
             this.state.positionX[i] = Math.cos(angle) * R;
@@ -417,9 +476,41 @@ export class SimulationManager {
             this.state.colors[i * 3 + 2] = b;
         }
 
-        // Tabulate the azimuthally-averaged radial acceleration from the realized
-        // particle distribution + halo, then warm each star to the target Q.
+        // Tabulate the azimuthally-averaged radial acceleration and surface density
+        // from the realized particle distribution, then warm each star to the
+        // target Q using those *measured* profiles - so Q is self-consistent with
+        // the disk that actually exists, not an assumed analytic Sigma.
         this.buildRotationCurve();
+
+        // Calibrate the total disk mass so the measured disk fraction at 2.2 R_d
+        // hits TARGET_F_DISK. The disk's radial force is linear in total mass
+        // (positions are mass-independent), while the halo's force is independent
+        // of it; so measure both at the provisional mass M0 and solve the single
+        // linear equation f = M*k / (M*k + vHalo2) for the target mass.
+        const Rstar = DISK_FRACTION_RADIUS_FACTOR * DISK_SCALE_LENGTH;
+        const M0 = this.diskMass;
+        const diskAcc = this.aRadInterp(Rstar) - this.haloAcc(Rstar); // disk-only inward accel
+        const vDisk2_perMass = (diskAcc * Rstar) / M0;                 // ∝, mass-independent
+        const vHalo2 = this.haloAcc(Rstar) * Rstar;
+        const f = Math.min(0.95, Math.max(0.05, TARGET_F_DISK));
+        // If the halo is ~zero, f_disk is ~1 for any mass: skip and keep M0.
+        if (vDisk2_perMass > 0 && vHalo2 > 0) {
+            let mTarget = ((f / (1 - f)) * vHalo2) / vDisk2_perMass;
+            // Clamp to a sane positive range relative to the seed mass.
+            mTarget = Math.min(Math.max(mTarget, M0 * 1e-3), M0 * 1e6);
+            const m = mTarget / n;
+            for (let i = 0; i < n; i++) this.state.mass[i] = m;
+            this.diskMass = mTarget;
+            // Rebuild the rotation curve: the disk accel now scales to the
+            // calibrated mass (the halo term is unchanged).
+            this.buildRotationCurve();
+        }
+
+        this.buildSurfaceDensity();
+        // Derive a safe dt from the now-final disk mass and measured rotation
+        // curve, BEFORE computeStarVelocity applies its leapfrog half-step (which
+        // reads params.dt).
+        this.params.dt = this.computeAdaptiveTimestep();
         for (let i = 0; i < n; i++) {
             this.computeStarVelocity(i, radii[i]);
         }
@@ -477,9 +568,16 @@ export class SimulationManager {
     softResetVelocities() {
         if (!this.state) return;
         const selfGrav = this.diskMass > 0;
-        // Rebuild the measured rotation curve from the current positions so the
-        // recomputed circular speeds stay consistent with the actual field.
-        if (selfGrav) this.buildRotationCurve();
+        // Rebuild the measured rotation curve and surface density from the current
+        // positions so the recomputed circular speeds and Q stay consistent with
+        // the actual field.
+        if (selfGrav) {
+            this.buildRotationCurve();
+            this.buildSurfaceDensity();
+            // Keep dt consistent with the current rotation curve before the
+            // recompute loop re-applies the leapfrog half-step (which reads dt).
+            this.params.dt = this.computeAdaptiveTimestep();
+        }
         // The self-gravitating disk has no central point mass, so index 0 is a
         // real disk particle and must be (re)warmed too; the "core" preset keeps
         // its stationary SMBH at index 0.
@@ -526,6 +624,63 @@ export class SimulationManager {
     }
 
     /**
+     * Timestep to use given the current galaxy mode. The "core" preset keeps the
+     * engine preset's fixed timeStep (test particles in a static potential). The
+     * self-gravitating preset instead *derives* a safe dt from the disk that
+     * actually exists, so it can never silently under-resolve when the disk mass
+     * (and hence orbital speeds and encounter kicks) is raised: dynamical times
+     * shrink as 1/sqrt(mass) while the preset dt stays fixed.
+     *
+     * dt is the minimum of three limits, floored so a mis-scaling can't stall the
+     * sim:
+     *   1. the engine preset dt (never run faster, nor slower unless forced);
+     *   2. an orbital-resolution limit, one period at the peak angular frequency
+     *      Omega_max over the measured rotation-curve grid, divided by
+     *      {@link STEPS_PER_ORBIT};
+     *   3. a close-encounter limit for the heavy macro-particles,
+     *      {@link ENCOUNTER_SAFETY} * sqrt(eps^3 / (G m)), eps the softening.
+     * Reads the live {@link diskMass} and {@link rotCurveAcc} (not the disk-mass
+     * constant), so it stays correct if the mass is recalibrated and the curve
+     * rebuilt before velocities are set. Requires the rotation curve to exist;
+     * falls back to the preset dt otherwise. Mirrors {@link effectiveSoftening}.
+     */
+    computeAdaptiveTimestep(): number {
+        const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
+        const presetDt = preset ? preset.timeStep : ENGINE_PRESETS.brute.timeStep;
+        if (this.params.galaxyMode !== 'selfgrav') return presetDt;
+        const acc = this.rotCurveAcc;
+        if (!acc) return presetDt;
+
+        let dt = presetDt; // limit 1: never faster than the preset.
+
+        // limit 2: resolve the fastest orbit. Omega(r) = vCirc(r)/r, peaked over
+        // the rotation-curve radius grid (skip r = 0).
+        const Nr = acc.length;
+        let omegaMax = 0;
+        for (let k = 0; k < Nr; k++) {
+            const rk = this.rotCurveRMin + ((this.rotCurveRMax - this.rotCurveRMin) * k) / (Nr - 1);
+            if (rk <= 0) continue;
+            const omega = this.vCircAt(rk) / rk;
+            if (omega > omegaMax) omegaMax = omega;
+        }
+        if (omegaMax > 0) {
+            dt = Math.min(dt, (2 * Math.PI / omegaMax) / STEPS_PER_ORBIT);
+        }
+
+        // limit 3: resolve a near-softening-length two-body encounter between the
+        // equal-mass macro-particles.
+        const eps = this.effectiveSoftening();
+        const mParticle = this.diskMass / Math.max(this.params.count, 1);
+        const G = this.params.gravity;
+        if (mParticle > 0 && G > 0) {
+            dt = Math.min(dt, ENCOUNTER_SAFETY * Math.sqrt((eps * eps * eps) / (G * mParticle)));
+        }
+
+        // Floor so a pathological (mis-scaled) choice can't crawl the sim to a halt.
+        return Math.max(dt, presetDt * MIN_DT_FRACTION);
+    }
+
+    /**
      * Inward radial acceleration from the dark-matter halo (isothermal-cored)
      * at radius `r`: a_DM = dmStrength^2 * r / (r^2 + r_core^2). Shared by the
      * "core" preset's analytic rotation curve and the self-gravitating preset's
@@ -549,13 +704,80 @@ export class SimulationManager {
     }
 
     /**
-     * Exponential surface density of the self-gravitating disk at radius `r`:
-     * Sigma(R) = Sigma0 * exp(-R/R_d), Sigma0 = Mdisk / (2*pi*R_d^2).
+     * Analytic exponential surface density Sigma(R) = Sigma0 * exp(-R/R_d),
+     * Sigma0 = Mdisk / (2*pi*R_d^2). Smooth fallback for {@link diskSurfaceDensity}
+     * before the measured profile is built and beyond its (truncated) range.
      */
-    private diskSurfaceDensity(r: number): number {
+    private analyticSurfaceDensity(r: number): number {
         const Rd = DISK_SCALE_LENGTH;
         const sigma0 = this.diskMass / (2 * Math.PI * Rd * Rd);
         return sigma0 * Math.exp(-r / Rd);
+    }
+
+    /**
+     * Builds {@link surfDensProfile}: the azimuthally-averaged surface density of
+     * the *realized* disk, from a mass-weighted histogram of particle radii
+     * (Sigma_k = M_k / area of shell k), lightly boxcar-smoothed to suppress
+     * Poisson noise. Measuring Sigma - rather than assuming the analytic
+     * exponential - keeps the Toomre-Q calibration consistent with the disk that
+     * actually exists, independent of the position sampling.
+     */
+    private buildSurfaceDensity() {
+        const Nr = 100;
+        const n = this.params.count;
+        const rMax = DISK_TRUNCATION * DISK_SCALE_LENGTH;
+        const dr = rMax / Nr;
+        const px = this.state.positionX;
+        const py = this.state.positionY;
+        const mass = this.state.mass;
+
+        // Mass per radial shell, converted to a surface density by shell area
+        // pi*((k+1)^2 - k^2)*dr^2 = pi*(2k+1)*dr^2.
+        const raw = new Float64Array(Nr);
+        for (let i = 0; i < n; i++) {
+            const r = Math.sqrt(px[i] * px[i] + py[i] * py[i]);
+            const k = Math.floor(r / dr);
+            if (k >= 0 && k < Nr) raw[k] += mass[i];
+        }
+        for (let k = 0; k < Nr; k++) {
+            raw[k] /= Math.PI * (2 * k + 1) * dr * dr;
+        }
+
+        // Boxcar smoothing (half-width 2 bins) to tame shot noise, especially in
+        // the sparsely-populated inner and outer shells.
+        const sigma = new Float64Array(Nr);
+        const h = 2;
+        for (let k = 0; k < Nr; k++) {
+            let sum = 0, cnt = 0;
+            for (let j = Math.max(0, k - h); j <= Math.min(Nr - 1, k + h); j++) {
+                sum += raw[j];
+                cnt++;
+            }
+            sigma[k] = sum / cnt;
+        }
+
+        this.surfDensProfile = sigma;
+        this.surfDensDr = dr;
+    }
+
+    /**
+     * Surface density at radius `r`, linearly interpolated from the measured
+     * profile {@link surfDensProfile} (bin centres at (k + 0.5) * dr). Falls back
+     * to the smooth analytic exponential before the profile is built and beyond
+     * the measured (truncated) range, and floors at a tiny positive value so the
+     * asymmetric-drift log-derivative stays finite.
+     */
+    private diskSurfaceDensity(r: number): number {
+        const prof = this.surfDensProfile;
+        const dr = this.surfDensDr;
+        if (!prof || dr <= 0) return this.analyticSurfaceDensity(r);
+        const Nr = prof.length;
+        const t = r / dr - 0.5; // continuous bin-centre coordinate
+        if (t <= 0) return Math.max(prof[0], 1e-30);
+        if (t >= Nr - 1) return this.analyticSurfaceDensity(r);
+        const k = Math.floor(t);
+        const frac = t - k;
+        return Math.max(prof[k] * (1 - frac) + prof[k + 1] * frac, 1e-30);
     }
 
     /**
@@ -639,6 +861,18 @@ export class SimulationManager {
     /** Circular speed from the measured rotation curve. */
     private vCircAt(r: number): number {
         return Math.sqrt(Math.max(this.aRadInterp(r) * r, 0));
+    }
+
+    /**
+     * Disk fraction f_disk = v_disk^2 / v_c^2 at radius `r` from the current
+     * rotation curve, i.e. the share of the circular speed provided by the disk's
+     * own gravity (vs the halo). Exposed for verification/telemetry of the mass
+     * calibration without reaching into private fields.
+     */
+    diskFractionAt(r: number): number {
+        const total = this.aRadInterp(r) * r;
+        const disk = (this.aRadInterp(r) - this.haloAcc(r)) * r;
+        return disk / Math.max(total, 1e-30);
     }
 
     /**
@@ -770,6 +1004,10 @@ export class SimulationManager {
         // larger self-gravitating softening (no-op for the "core" preset) before
         // softResetVelocities recomputes the IC, which reads params.softening.
         this.params.softening = this.effectiveSoftening();
+        // Same for dt: restore the disk's derived dt so the preset switch doesn't
+        // leave a stale preset dt (no-op for the "core" preset; softResetVelocities
+        // re-derives it again for selfgrav, but this keeps the two in lockstep).
+        this.params.dt = this.computeAdaptiveTimestep();
 
         this.softResetVelocities();
 
