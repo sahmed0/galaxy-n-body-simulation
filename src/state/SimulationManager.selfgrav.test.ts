@@ -3,13 +3,15 @@
  *
  * Tests for the self-gravitating ("selfgrav") galaxy initial conditions in
  * {@link SimulationManager}. The physics-first model is an exponential disk of
- * equal-mass macro-particles embedded in the dark-matter halo, with no central
- * point mass. Velocities come from the *measured* 2-D rotation curve (so the disk
- * starts in centrifugal balance with the engine's actual forces) warmed to a
- * target Toomre Q with an asymmetric-drift correction. These guard that the disk
- * stays bound when stepped - rather than expanding/exploding within a crossing
- * time. initGalaxy()/BruteForceEngine touch no DOM or GPU, so they are driven
- * directly.
+ * equal-mass macro-particles embedded in the dark-matter halo, with a fixed
+ * central black hole pinned at the origin (index 0) - an inert, source-only point
+ * mass that pulls on the disk but feels nothing and never moves. Velocities come
+ * from the *measured* 2-D rotation curve (disk + halo + BH, so the disk starts in
+ * centrifugal balance with the engine's actual forces) warmed to a target Toomre Q
+ * with an asymmetric-drift correction. These guard that the disk stays bound when
+ * stepped - rather than expanding/exploding within a crossing time - and that the
+ * BH stays pinned. initGalaxy()/BruteForceEngine touch no DOM or GPU, so they are
+ * driven directly.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
@@ -18,8 +20,9 @@ import {
     MIN_DT_FRACTION,
     DISK_SCALE_LENGTH,
     TARGET_F_DISK,
+    CORE_MASS,
 } from './SimulationManager';
-import { BruteForceEngine } from '../physics';
+import { BruteForceEngine, BarnesHutEngine } from '../physics';
 
 beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
@@ -53,15 +56,22 @@ function rmsRadius(sim: SimulationManager): number {
 }
 
 describe('SimulationManager - self-gravitating initial conditions', () => {
-    it('uses equal-mass macro-particles (no central point mass) totalling the calibrated diskMass', () => {
+    it('reserves index 0 as the fixed BH and gives the disk equal-mass macro-particles totalling diskMass', () => {
         const sim = makeSim('selfgrav');
         sim.initGalaxy();
 
-        // The total disk mass is calibrated (not the seed constant); every particle
-        // - including index 0 - is an equal-mass disk macro-particle of diskMass/count.
-        const expected = sim.diskMass / sim.params.count;
+        // Index 0 is the pinned central black hole (CORE_MASS), not a disk particle.
+        expect(sim.state.mass[0]).toBe(CORE_MASS);
+        expect(sim.params.blackHoleMass).toBe(CORE_MASS);
+
+        // The total disk mass is calibrated (not the seed constant); every disk
+        // particle [1, count) is an equal-mass macro-particle of diskMass/nDiskActive.
+        // With count=1500 the active count clamps to the whole disk, so that is
+        // diskMass/(count - 1).
+        const nDiskActive = sim.params.count - 1;
+        const expected = sim.diskMass / nDiskActive;
         let total = 0;
-        for (let i = 0; i < sim.params.count; i++) {
+        for (let i = 1; i < sim.params.count; i++) {
             // Relative tolerance: the calibrated mass can be large, so an absolute
             // toBeCloseTo would fail purely on float magnitude.
             expect(Math.abs(sim.state.mass[i] / expected - 1)).toBeLessThan(1e-4);
@@ -69,8 +79,55 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         }
         // Float32 storage accumulates a tiny rounding error over N particles.
         expect(Math.abs(total / sim.diskMass - 1)).toBeLessThan(1e-4);
-        // The whole disk self-gravitates: every particle is active.
+        // BH (index 0) + the whole disk active: the source range end is the count.
         expect(sim.params.activeCount).toBe(sim.params.count);
+    });
+
+    it('pins the black hole at the origin with zero velocity', () => {
+        const sim = makeSim('selfgrav');
+        sim.initGalaxy();
+        expect(sim.state.positionX[0]).toBe(0);
+        expect(sim.state.positionY[0]).toBe(0);
+        expect(sim.state.velocityX[0]).toBe(0);
+        expect(sim.state.velocityY[0]).toBe(0);
+    });
+
+    it('keeps the black hole fixed at the origin when stepped (feels no force, never moves)', () => {
+        const sim = makeSim('selfgrav');
+        sim.initGalaxy();
+
+        const engine = new BruteForceEngine(sim.state);
+        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+
+        // The BH is an inert, pinned marker: position and velocity are untouched.
+        expect(sim.state.positionX[0]).toBe(0);
+        expect(sim.state.positionY[0]).toBe(0);
+        expect(sim.state.velocityX[0]).toBe(0);
+        expect(sim.state.velocityY[0]).toBe(0);
+    });
+
+    it('also pins the BH and keeps the disk bound under the Barnes-Hut engine', () => {
+        const sim = makeSim('selfgrav');
+        sim.initGalaxy();
+        const r0 = maxRadius(sim);
+
+        // Barnes-Hut excludes the BH by *not inserting* it into the tree (rather
+        // than a loop bound), so guard that path independently of BruteForce.
+        const engine = new BarnesHutEngine(sim.state);
+        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+
+        expect(sim.state.positionX[0]).toBe(0);
+        expect(sim.state.positionY[0]).toBe(0);
+        expect(sim.state.velocityX[0]).toBe(0);
+        expect(sim.state.velocityY[0]).toBe(0);
+
+        // The disk should hold together rather than blow out.
+        let flung = 0;
+        for (let i = 1; i < sim.params.count; i++) {
+            const r = Math.hypot(sim.state.positionX[i], sim.state.positionY[i]);
+            if (r > 3 * r0) flung++;
+        }
+        expect(flung / sim.params.count).toBeLessThan(0.05);
     });
 
     it('calibrates the disk mass so f_disk at 2.2 R_d hits TARGET_F_DISK', () => {
@@ -151,9 +208,11 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         // Reach through the runtime for the private kappaAt (TS `private` is
         // compile-time only) and sample it on a fine radius grid, finer than the
         // rotation-curve table spacing so a per-cell staircase would show up as
-        // large cell-to-cell jumps.
+        // large cell-to-cell jumps. Start at 0.5 R_d: inside that the fixed central
+        // BH (softening ~25) makes kappa genuinely Keplerian-steep, so the cell-to-
+        // cell change there is physical, not a staircase artifact.
         const s = sim as any;
-        const rLo = 0.2 * DISK_SCALE_LENGTH;
+        const rLo = 0.5 * DISK_SCALE_LENGTH;
         const rHi = 3 * DISK_SCALE_LENGTH;
         const N = 200;
         const kappa: number[] = [];
@@ -210,10 +269,12 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
         return sim;
     }
 
-    it('marks only the first selfGravActiveCount particles active', () => {
+    it('marks the BH plus the first selfGravActiveCount disk particles active', () => {
         const sim = makeSplitSim(4000, 1000);
         sim.initGalaxy();
-        expect(sim.params.activeCount).toBe(1000);
+        // Source range [1, activeCount) = 1000 disk sources, so activeCount = 1001
+        // (the BH at index 0 occupies the leading slot, mirroring the core preset).
+        expect(sim.params.activeCount).toBe(1001);
         // Sanity: the split must actually be engaged (not clamped to count).
         expect(sim.params.activeCount).toBeLessThan(sim.params.count);
     });
@@ -222,16 +283,17 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
         const sim = makeSplitSim(4000, 1000);
         sim.initGalaxy();
 
-        // Every particle carries the same per-active-particle mass = diskMass/nActive
-        // (passive ones for render parity; they are never summed as a field source).
-        const nActive = sim.params.activeCount;
-        const expected = sim.diskMass / nActive;
+        // Every disk particle [1, count) carries the same per-active-particle mass =
+        // diskMass/nDiskActive (passive ones for render parity; never summed as a
+        // source). Index 0 is the BH (CORE_MASS) and is excluded.
+        const nDiskActive = sim.params.activeCount - 1;
+        const expected = sim.diskMass / nDiskActive;
         let activeSum = 0;
-        for (let i = 0; i < sim.params.count; i++) {
+        for (let i = 1; i < sim.params.count; i++) {
             expect(Math.abs(sim.state.mass[i] / expected - 1)).toBeLessThan(1e-4);
-            if (i < nActive) activeSum += sim.state.mass[i];
+            if (i < sim.params.activeCount) activeSum += sim.state.mass[i];
         }
-        // The field-generating (active) mass totals the calibrated disk mass.
+        // The field-generating (active disk) mass totals the calibrated disk mass.
         expect(Math.abs(activeSum / sim.diskMass - 1)).toBeLessThan(1e-4);
     });
 
@@ -283,6 +345,9 @@ describe('SimulationManager - core preset is unchanged', () => {
 
         expect(sim.params.softening).toBe(1.0);
         expect(sim.diskMass).toBe(0);
+        // The "core" preset uses a live index-0 SMBH particle, not the analytic
+        // fixed-BH term, so the latter stays off.
+        expect(sim.params.blackHoleMass).toBe(0);
 
         // The adaptive timestep is a no-op for the core preset: dt stays the
         // fixed engine preset value.

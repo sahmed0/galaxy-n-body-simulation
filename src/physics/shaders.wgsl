@@ -43,8 +43,16 @@ fn sim_update(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
     return;
   }
 
+  // 1b. Pinned central black hole: when active (self-grav preset), index 0 is the
+  // fixed, inert BH marker. It feels no force and never moves - pass it through
+  // unchanged so it stays at the origin. Its CORE_MASS drives the render glow.
+  if (index == 0u && params.blackHoleMass > 0.0) {
+    particlesOut[0] = particlesIn[0];
+    return;
+  }
+
   // 2. Load My Data
-  var pIn = particlesIn[index]; 
+  var pIn = particlesIn[index];
   var pos = pIn.pos;
   var vel = pIn.vel;
   var acc = vec2<f32>(0.0, 0.0); // Renamed force to acc (acceleration)
@@ -56,6 +64,11 @@ fn sim_update(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
   // 4. Force Loop
   for (var i = 0u; i < limit; i = i + 1u) {
     if (i == index) {
+      continue;
+    }
+    // Index 0 is the pinned BH marker, not a pairwise source - its pull is the
+    // analytic SMBH term in §4.5 (with its own softening). Skip it here.
+    if (i == 0u && params.blackHoleMass > 0.0) {
       continue;
     }
 

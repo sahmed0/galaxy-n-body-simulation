@@ -78,7 +78,10 @@ export class BruteForceEngine implements PhysicsEngine {
         const vx = this.state.velocityX;
         const vy = this.state.velocityY;
 
-        for (let i = 0; i < n; i++) {
+        // When a fixed central black hole is active (self-grav preset), index 0 is
+        // its pinned, inert marker: never integrate it so it stays at the origin.
+        const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
+        for (let i = start; i < n; i++) {
             px[i] += vx[i] * dt;
             py[i] += vy[i] * dt;
         }
@@ -102,8 +105,14 @@ export class BruteForceEngine implements PhysicsEngine {
         const softeningSq = params.softening * params.softening;
         const activeCount = params.useActivePassive ? Math.min(params.activeCount, n) : n;
 
+        // When a fixed central black hole is active (self-grav preset), index 0 is
+        // its pinned, inert marker: it is neither a pairwise source nor a receiver -
+        // its pull on the disk is the analytic SMBH term (§4) with its own softening.
+        // Start every pairwise/central loop at `start` so index 0 is left untouched.
+        const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
+
         // 1. Heavy <-> Heavy interactions (Newton's 3rd Law Optimisation: i < j)
-        for (let i = 0; i < activeCount; i++) {
+        for (let i = start; i < activeCount; i++) {
             for (let j = i + 1; j < activeCount; j++) {
                 const dx = px[j] - px[i];
                 const dy = py[j] - py[i];
@@ -125,7 +134,7 @@ export class BruteForceEngine implements PhysicsEngine {
 
         // 2. Heavy -> Light interactions (One-way Gravity)
         if (params.useActivePassive && activeCount < n) {
-            for (let i = 0; i < activeCount; i++) {
+            for (let i = start; i < activeCount; i++) {
                 const mi = mass[i];
                 const pix = px[i];
                 const piy = py[i];
@@ -151,7 +160,7 @@ export class BruteForceEngine implements PhysicsEngine {
             const dmStrengthSq = dmStrength * dmStrength;
             const dmCoreRadiusSq = dmCoreRadius * dmCoreRadius;
 
-            for (let i = 0; i < n; i++) {
+            for (let i = start; i < n; i++) {
                 const pix = px[i];
                 const piy = py[i];
                 const distSq = pix * pix + piy * piy;
@@ -168,7 +177,8 @@ export class BruteForceEngine implements PhysicsEngine {
         const smbhMass = params.blackHoleMass || 0;
         if (smbhMass > 0) {
             const smbhSofteningSq = (params.blackHoleSoftening || params.softening) ** 2;
-            for (let i = 0; i < n; i++) {
+            // Index 0 is the BH itself (pinned at origin); skip it via `start`.
+            for (let i = start; i < n; i++) {
                 const pix = px[i];
                 const piy = py[i];
                 const distSq = pix * pix + piy * piy + smbhSofteningSq;

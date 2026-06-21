@@ -41,7 +41,7 @@ export const DISK_INNER_RADIUS = 50;
  * self-gravitating preset has no central point mass: its rotation is set by the
  * disk's own gravity plus the dark-matter halo.
  */
-export const CORE_MASS = 4.3e6;
+export const CORE_MASS = 100;
 
 /**
  * Exponential scale length R_d of the self-gravitating disk:
@@ -151,6 +151,20 @@ export const MIN_DT_FRACTION = 1 / 64;
 export const SELF_GRAV_ACTIVE_COUNT = 3000;
 
 /**
+ * Plummer softening for the fixed central black hole of the self-gravitating
+ * preset, in world units. Unlike the disk's softening (~the inter-particle
+ * spacing, tens of units), the BH is a single hard point mass, so its softening
+ * is the knob that bounds how deep and fast the innermost orbits get: the
+ * orbital-resolution dt limit (see {@link SimulationManager.computeAdaptiveTimestep})
+ * shrinks as the inner well steepens, so too small a value drives dt toward the
+ * {@link MIN_DT_FRACTION} floor. Chosen on the order of the disk softening so the
+ * BH dominates the centre without crushing the timestep. Only the self-gravitating
+ * preset uses a fixed central BH; the "core" preset's SMBH is a live particle
+ * (index 0) instead, with {@link blackHoleMass} left at 0.
+ */
+export const SELF_GRAV_BH_SOFTENING = 25;
+
+/**
  * Manages the state, memory, and lifecycle of the N-Body physics simulation.
  */
 export class SimulationManager {
@@ -251,6 +265,11 @@ export class SimulationManager {
         selfGravActiveCount: SELF_GRAV_ACTIVE_COUNT,
         theta: 1.0,
         massThreshold: 1.0,
+        // Fixed central black hole. Non-zero only in the self-gravitating preset,
+        // where it pins an inert, source-only point mass at the origin (index 0).
+        // The "core" preset leaves this 0 and uses a live SMBH particle instead.
+        blackHoleMass: 0,
+        blackHoleSoftening: SELF_GRAV_BH_SOFTENING,
         isPaused: false,
         cameraZoom: 1.0,
         cameraX: 0.0,
@@ -389,6 +408,16 @@ export class SimulationManager {
         this.workerBridge?.dispose();
         this.workerBridge = null;
 
+        // The self-gravitating preset pins a fixed, source-only black hole at the
+        // origin (index 0); the "core" preset uses a live SMBH particle instead, so
+        // its analytic BH term stays off. Set this first: it gates which index range
+        // counts as disk sources (see {@link bhStart}/{@link selfGravActiveCount}),
+        // which both effectiveSoftening and the self-grav initial conditions read.
+        this.params.blackHoleMass = this.params.galaxyMode === 'selfgrav' ? CORE_MASS : 0;
+        if (this.params.galaxyMode === 'selfgrav') {
+            this.params.blackHoleSoftening = SELF_GRAV_BH_SOFTENING;
+        }
+
         // Lock in the mode-appropriate softening *before* computing velocities:
         // the initial conditions (circular speed, epicyclic frequency, and - for
         // the self-gravitating disk - the measured rotation curve) all read
@@ -463,30 +492,39 @@ export class SimulationManager {
 
     /**
      * Self-gravitating preset: an exponential disk of macro-particles embedded in
-     * the dark-matter halo, with no central point mass. Velocities are set from the
-     * *measured* 2-D rotation curve (so the disk starts in centrifugal balance with
-     * the engine's actual forces) and warmed to a target Toomre Q, producing
-     * swing-amplified transient spiral arms.
+     * the dark-matter halo, with a fixed central black hole pinned at the origin
+     * (index 0; see {@link bhStart}). Velocities are set from the *measured* 2-D
+     * rotation curve - disk pairwise gravity + halo + BH - so the disk starts in
+     * centrifugal balance with the engine's actual forces, and warmed to a target
+     * Toomre Q, producing swing-amplified transient spiral arms.
      *
-     * Active/passive split (see {@link SELF_GRAV_ACTIVE_COUNT}): the first
-     * `nActive` particles carry the entire disk mass and source the field; the rest
-     * are passive tracers that feel the active field + halo but do not gravitate.
-     * Because the radii are sampled i.i.d. from the same exponential profile, the
-     * first `nActive` indices are already a fair subsample - no reordering needed.
-     * Every particle (active or passive) is given the same per-active-particle mass
-     * so they render identically; the engines and the field-measurement helpers
-     * (`buildRotationCurve`, `buildSurfaceDensity`, `applySelfGravHalfKick`) treat
-     * the split purely by index `[0, nActive)`, never by mass. When `nActive == n`
-     * the split is inert and the disk is fully self-gravitating as before.
+     * The BH (index 0) is an inert, source-only marker: it carries {@link CORE_MASS}
+     * purely so the renderers draw the central glow, sits at the origin, and is
+     * excluded from every force sum (its pull on the disk comes from the engines'
+     * analytic SMBH term, with its own {@link blackHoleSoftening}). The disk occupies
+     * `[bhStart, n)`.
+     *
+     * Active/passive split (see {@link SELF_GRAV_ACTIVE_COUNT}): the first `nActive`
+     * *disk* particles (indices `[bhStart, bhStart + nActive)`) carry the entire disk
+     * mass and source the field; the rest are passive tracers that feel the active
+     * field + halo + BH but do not gravitate. Because the radii are sampled i.i.d.
+     * from the same exponential profile, those indices are already a fair subsample -
+     * no reordering needed. Every disk particle is given the same per-active-particle
+     * mass so they render identically; the engines and the field-measurement helpers
+     * (`buildRotationCurve`, `buildSurfaceDensity`, `applySelfGravHalfKick`) treat the
+     * split purely by index, never by mass. When `nActive` covers the whole disk the
+     * split is inert and the disk is fully self-gravitating.
      */
     private initSelfGravDisk() {
         const n = this.params.count;
+        const start = this.bhStart();
         const nActive = this.selfGravActiveCount();
         // The active set carries the whole disk mass, so each active particle is
         // heavier (Mdisk / nActive). Passive tracers are given the same value for
-        // render parity; it never enters the force sums. Fix activeCount now, before
-        // the field helpers below read it via selfGravActiveCount().
-        this.params.activeCount = nActive;
+        // render parity; it never enters the force sums. The disk source range is
+        // [start, start + nActive); set activeCount to its end now, before the field
+        // helpers below read it - mirrors the core preset's "+1" for its index-0 SMBH.
+        this.params.activeCount = start + nActive;
         // The split's correctness depends on the engine honouring activeCount:
         // passive tracers carry a (render-only) nonzero mass, so if the engine
         // summed over every particle instead the disk would be n/nActive times too
@@ -497,8 +535,22 @@ export class SimulationManager {
         const seedMass = SELF_GRAV_DISK_MASS / nActive;
         this.diskMass = SELF_GRAV_DISK_MASS;
 
+        // Pin the fixed central BH at the origin (inert, source-only marker). Its
+        // CORE_MASS drives the renderers' BH glow; it is never summed as a disk source
+        // and never integrated (the engines skip index 0 when blackHoleMass > 0).
+        if (start === 1) {
+            this.state.positionX[0] = 0;
+            this.state.positionY[0] = 0;
+            this.state.velocityX[0] = 0;
+            this.state.velocityY[0] = 0;
+            this.state.mass[0] = CORE_MASS;
+            this.state.colors[0] = 1;
+            this.state.colors[1] = 1;
+            this.state.colors[2] = 0.85;
+        }
+
         const radii = new Float64Array(n);
-        for (let i = 0; i < n; i++) {
+        for (let i = start; i < n; i++) {
             const angle = Math.random() * Math.PI * 2;
             // Sample R from the exponential-disk *radial* distribution
             // dN/dR = 2*pi*R*Sigma(R) ∝ R*exp(-R/Rd): a Gamma(k=2, scale=Rd)
@@ -532,14 +584,16 @@ export class SimulationManager {
         // the measured rotation curve. Masses are equal, so this is a plain mean.
         // (Net *momentum* is handled later by removeNetMomentum; net angular
         // momentum is the intended ordered rotation and is left untouched.)
+        // Average over the disk only ([start, n)); the pinned BH stays at the origin.
+        const nDisk = n - start;
         let xMean = 0, yMean = 0;
-        for (let i = 0; i < n; i++) {
+        for (let i = start; i < n; i++) {
             xMean += this.state.positionX[i];
             yMean += this.state.positionY[i];
         }
-        xMean /= n;
-        yMean /= n;
-        for (let i = 0; i < n; i++) {
+        xMean /= nDisk;
+        yMean /= nDisk;
+        for (let i = start; i < n; i++) {
             this.state.positionX[i] -= xMean;
             this.state.positionY[i] -= yMean;
             // Recompute radii from the recentred positions so radius and direction
@@ -555,27 +609,30 @@ export class SimulationManager {
 
         // Calibrate the total disk mass so the measured disk fraction at 2.2 R_d
         // hits TARGET_F_DISK. The disk's radial force is linear in total mass
-        // (positions are mass-independent), while the halo's force is independent
-        // of it; so measure both at the provisional mass M0 and solve the single
-        // linear equation f = M*k / (M*k + vHalo2) for the target mass.
+        // (positions are mass-independent), while the *external* force (halo + fixed
+        // BH) is independent of it; so measure both at the provisional mass M0 and
+        // solve the single linear equation f = M*k / (M*k + vExt2) for the target
+        // mass, where vExt2 is the squared circular speed from the halo and the BH.
         const Rstar = DISK_FRACTION_RADIUS_FACTOR * DISK_SCALE_LENGTH;
         const M0 = this.diskMass;
-        const diskAcc = this.aRadInterp(Rstar) - this.haloAcc(Rstar); // disk-only inward accel
-        const vDisk2_perMass = (diskAcc * Rstar) / M0;                 // ∝, mass-independent
-        const vHalo2 = this.haloAcc(Rstar) * Rstar;
+        const extAcc = this.haloAcc(Rstar) + this.bhAcc(Rstar);     // halo + fixed BH
+        const diskAcc = this.aRadInterp(Rstar) - extAcc;            // disk-only inward accel
+        const vDisk2_perMass = (diskAcc * Rstar) / M0;              // ∝, mass-independent
+        const vExt2 = extAcc * Rstar;
         const f = Math.min(0.95, Math.max(0.05, TARGET_F_DISK));
-        // If the halo is ~zero, f_disk is ~1 for any mass: skip and keep M0.
-        if (vDisk2_perMass > 0 && vHalo2 > 0) {
-            let mTarget = ((f / (1 - f)) * vHalo2) / vDisk2_perMass;
+        // If the external field is ~zero, f_disk is ~1 for any mass: skip and keep M0.
+        if (vDisk2_perMass > 0 && vExt2 > 0) {
+            let mTarget = ((f / (1 - f)) * vExt2) / vDisk2_perMass;
             // Clamp to a sane positive range relative to the seed mass.
             mTarget = Math.min(Math.max(mTarget, M0 * 1e-3), M0 * 1e6);
             // Split the calibrated total over the active set; passive tracers get
             // the same value for render parity (it is never summed as a source).
+            // Index 0 (the BH) keeps CORE_MASS - only disk particles are reset.
             const m = mTarget / nActive;
-            for (let i = 0; i < n; i++) this.state.mass[i] = m;
+            for (let i = start; i < n; i++) this.state.mass[i] = m;
             this.diskMass = mTarget;
             // Rebuild the rotation curve: the disk accel now scales to the
-            // calibrated mass (the halo term is unchanged).
+            // calibrated mass (the external term is unchanged).
             this.buildRotationCurve();
         }
 
@@ -588,7 +645,8 @@ export class SimulationManager {
         // dispersions so the passive cloud shares the active disk's temperature and
         // traces the same spiral structure. (params.activeCount was fixed at the
         // top so the field helpers above already used the active set as sources.)
-        for (let i = 0; i < n; i++) {
+        // The pinned BH (index 0) is skipped: it keeps zero velocity.
+        for (let i = start; i < n; i++) {
             this.computeStarVelocity(i, radii[i]);
         }
 
@@ -618,15 +676,18 @@ export class SimulationManager {
     }
 
     /**
-     * Subtracts the mass-weighted mean velocity from every body so the system
+     * Subtracts the mass-weighted mean velocity from every disk body so the disk
      * carries zero net linear momentum. Without this, Poisson asymmetry in the
-     * disk's random realisation gives the whole galaxy (SMBH included) a small
-     * bulk drift across the view. Only used by the self-gravitating preset.
+     * disk's random realisation gives the whole galaxy a small bulk drift across
+     * the view. Operates over the disk range [bhStart, n) only: the fixed central
+     * BH (index 0) stays pinned at zero velocity and must not absorb the drift.
+     * Only used by the self-gravitating preset.
      */
     private removeNetMomentum() {
         const n = this.params.count;
+        const start = this.bhStart();
         let pxSum = 0, pySum = 0, mSum = 0;
-        for (let i = 0; i < n; i++) {
+        for (let i = start; i < n; i++) {
             const m = this.state.mass[i];
             pxSum += m * this.state.velocityX[i];
             pySum += m * this.state.velocityY[i];
@@ -635,7 +696,7 @@ export class SimulationManager {
         if (mSum <= 0) return;
         const vxMean = pxSum / mSum;
         const vyMean = pySum / mSum;
-        for (let i = 0; i < n; i++) {
+        for (let i = start; i < n; i++) {
             this.state.velocityX[i] -= vxMean;
             this.state.velocityY[i] -= vyMean;
         }
@@ -646,20 +707,22 @@ export class SimulationManager {
      * using each particle's *true* initial acceleration, mirroring the
      * {@link BruteForceEngine} kernel exactly so the staggered velocities match the
      * integrator's first force evaluation: a_i = sum_j G*m_j*d/(d^2+eps^2)^1.5 plus
-     * the origin-pinned dark-matter halo (no SMBH term for selfgrav). This is a
+     * the origin-pinned dark-matter halo and the fixed central black hole. This is a
      * one-time O(N^2) pass at init (~1e8 ops at N=1e4, same order as
      * buildRotationCurve), acceptable for initial conditions. Must run after the
      * final dt is set and after synchronized velocities are assigned.
      */
     private applySelfGravHalfKick() {
         const n = this.params.count;
+        const start = this.bhStart();
         // Force sources are the active set only, exactly as the engine does it: an
         // active particle feels the other active particles, a passive particle
         // feels the active particles, and neither feels the passive set. Restricting
-        // the inner loop to [0, nSrc) is both the correct mirror and what turns this
-        // one-time pass from O(N^2) into O(N * N_active) so a large passive cloud
-        // does not stall init.
-        const nSrc = this.selfGravActiveCount();
+        // the inner loop to the disk active range is both the correct mirror and what
+        // turns this one-time pass from O(N^2) into O(N * N_active) so a large passive
+        // cloud does not stall init. The pinned BH (index 0) is not a pairwise source
+        // - its pull is the analytic bhAcc term below - and is itself skipped.
+        const srcEnd = start + this.selfGravActiveCount();
         const px = this.state.positionX;
         const py = this.state.positionY;
         const mass = this.state.mass;
@@ -667,14 +730,14 @@ export class SimulationManager {
         const softeningSq = this.params.softening * this.params.softening;
         const halfDt = this.params.dt / 2;
 
-        for (let i = 0; i < n; i++) {
+        for (let i = start; i < n; i++) {
             const pix = px[i];
             const piy = py[i];
             let ax = 0;
             let ay = 0;
 
             // Pairwise self-gravity (mirrors BruteForceEngine: distSq includes eps^2).
-            for (let j = 0; j < nSrc; j++) {
+            for (let j = start; j < srcEnd; j++) {
                 if (j === i) continue;
                 const dx = px[j] - pix;
                 const dy = py[j] - piy;
@@ -685,13 +748,14 @@ export class SimulationManager {
                 ay += aBase * dy;
             }
 
-            // Dark-matter halo, inward along the radial direction. haloAcc(r)/r
-            // equals the engine's aDM_base, so this matches the engine's DM term.
+            // External central forces along the inward radial direction: the
+            // dark-matter halo and the fixed BH. haloAcc(r)/r and bhAcc(r)/r equal
+            // the engine's aDM_base and aSMBH, so this matches the engine's terms.
             const r = Math.hypot(pix, piy);
             if (r > 0) {
-                const aHalo = this.haloAcc(r);
-                ax -= (pix / r) * aHalo;
-                ay -= (piy / r) * aHalo;
+                const aExt = this.haloAcc(r) + this.bhAcc(r);
+                ax -= (pix / r) * aExt;
+                ay -= (piy / r) * aExt;
             }
 
             this.state.velocityX[i] += ax * halfDt;
@@ -718,10 +782,11 @@ export class SimulationManager {
             // recompute loop re-applies the leapfrog half-step (which reads dt).
             this.params.dt = this.computeAdaptiveTimestep();
         }
-        // The self-gravitating disk has no central point mass, so index 0 is a
-        // real disk particle and must be (re)warmed too; the "core" preset keeps
-        // its stationary SMBH at index 0.
-        for (let i = selfGrav ? 0 : 1; i < this.params.count; i++) {
+        // Skip index 0 in both presets: it is the central black hole - a live SMBH
+        // for "core", or the fixed pinned marker for self-grav (bhStart() === 1) -
+        // and must keep its own velocity rather than be re-warmed as a disk star.
+        const loopStart = selfGrav ? this.bhStart() : 1;
+        for (let i = loopStart; i < this.params.count; i++) {
             const distSq = this.state.positionX[i] * this.state.positionX[i] + this.state.positionY[i] * this.state.positionY[i];
             const dist = Math.sqrt(distSq);
 
@@ -761,8 +826,39 @@ export class SimulationManager {
      * {@link SELF_GRAV_ACTIVE_COUNT}.
      */
     private selfGravActiveCount(): number {
-        const n = Math.max(this.params.count, 1);
-        return Math.max(1, Math.min(this.params.selfGravActiveCount, n));
+        // Index 0 is reserved for the pinned BH marker when present, so the disk
+        // (and its active source range) starts at bhStart(). Clamp the active count
+        // to the slots actually available to the disk.
+        const avail = Math.max(this.params.count - this.bhStart(), 1);
+        return Math.max(1, Math.min(this.params.selfGravActiveCount, avail));
+    }
+
+    /**
+     * First particle index that belongs to the disk. The self-gravitating preset
+     * reserves index 0 for the fixed central black hole (an inert, source-only
+     * marker pinned at the origin), so the disk - and every disk source loop and
+     * the engines' pairwise/integration loops - starts at 1 when
+     * {@link params.blackHoleMass} is on. The "core" preset leaves the BH term off
+     * (its SMBH is the live index-0 particle), so the disk starts at 0.
+     */
+    private bhStart(): number {
+        return this.params.blackHoleMass > 0 ? 1 : 0;
+    }
+
+    /**
+     * Inward radial acceleration from the fixed central black hole at radius `r`:
+     * a_BH = G * M_BH * r / (r^2 + eps_BH^2)^1.5, the magnitude the engines'
+     * analytic SMBH term produces (distSq = r^2 + eps_BH^2). Zero when the BH is
+     * off (the "core" preset), so it is a no-op there. Folded into the measured
+     * rotation curve, the mass calibration, and the leapfrog half-kick so the disk
+     * starts in centrifugal balance with the BH the engine actually applies.
+     */
+    private bhAcc(r: number): number {
+        const M = this.params.blackHoleMass;
+        if (M <= 0) return 0;
+        const epsSq = this.params.blackHoleSoftening * this.params.blackHoleSoftening;
+        const d = r * r + epsSq;
+        return (this.params.gravity * M * r) / (d * Math.sqrt(d));
     }
 
     private effectiveSoftening(): number {
@@ -884,11 +980,13 @@ export class SimulationManager {
      */
     private buildSurfaceDensity() {
         const Nr = 100;
-        // Sum only the active set: it carries the full disk mass and sources the
+        // Sum only the disk active set: it carries the full disk mass and sources the
         // field, so its surface density is the one the Toomre-Q warming must use.
         // Passive tracers share the active particles' render mass but must not be
-        // double-counted into the field's Sigma.
-        const nSrc = this.selfGravActiveCount();
+        // double-counted into the field's Sigma; the pinned BH (index 0) carries
+        // CORE_MASS and is excluded entirely (it is not part of the disk's Sigma).
+        const start = this.bhStart();
+        const srcEnd = start + this.selfGravActiveCount();
         const rMax = DISK_TRUNCATION * DISK_SCALE_LENGTH;
         const dr = rMax / Nr;
         const px = this.state.positionX;
@@ -898,7 +996,7 @@ export class SimulationManager {
         // Mass per radial shell, converted to a surface density by shell area
         // pi*((k+1)^2 - k^2)*dr^2 = pi*(2k+1)*dr^2.
         const raw = new Float64Array(Nr);
-        for (let i = 0; i < nSrc; i++) {
+        for (let i = start; i < srcEnd; i++) {
             const r = Math.sqrt(px[i] * px[i] + py[i] * py[i]);
             const k = Math.floor(r / dr);
             if (k >= 0 && k < Nr) raw[k] += mass[i];
@@ -946,21 +1044,25 @@ export class SimulationManager {
 
     /**
      * Builds {@link rotCurveAcc}: the azimuthally-averaged inward radial
-     * acceleration of the *realized* disk (summed pairwise from every particle,
-     * using the engine's softening) plus the analytic halo, sampled on a uniform
-     * radius grid. Setting circular speeds from this - rather than a spherical
-     * enclosed-mass monopole, which is wrong for a 2-D 1/r^2 disk - is what makes
-     * the disk start in centrifugal balance with the forces the engine computes.
+     * acceleration of the *realized* disk (summed pairwise from every disk source,
+     * using the engine's softening) plus the analytic halo and the fixed central
+     * black hole, sampled on a uniform radius grid. Setting circular speeds from
+     * this - rather than a spherical enclosed-mass monopole, which is wrong for a
+     * 2-D 1/r^2 disk - is what makes the disk start in centrifugal balance with the
+     * forces the engine computes.
      */
     private buildRotationCurve() {
         const Nr = 128;
         const Naz = 32;
-        // Only the active set sources the field (mirrors the engine, which sums
-        // over [0, activeCount)); passive tracers carry a render mass but do not
-        // gravitate. The active particles are an i.i.d. subsample of the same
-        // exponential profile, so they reproduce the field shape (with sqrt(N)
-        // more shot noise) at the full disk mass they collectively carry.
-        const nSrc = this.selfGravActiveCount();
+        // Only the disk active set sources the pairwise field (mirrors the engine,
+        // which sums over [bhStart, activeCount)); passive tracers carry a render
+        // mass but do not gravitate, and the pinned BH (index 0) is excluded here -
+        // its contribution is the analytic bhAcc term added below. The active disk
+        // particles are an i.i.d. subsample of the same exponential profile, so they
+        // reproduce the field shape (with sqrt(N) more shot noise) at the full disk
+        // mass they collectively carry.
+        const start = this.bhStart();
+        const srcEnd = start + this.selfGravActiveCount();
         const G = this.params.gravity;
         const epsSq = this.params.softening * this.params.softening;
         const px = this.state.positionX;
@@ -992,7 +1094,7 @@ export class SimulationManager {
                 const ty = sin[a] * rk;
                 let axTot = 0;
                 let ayTot = 0;
-                for (let j = 0; j < nSrc; j++) {
+                for (let j = start; j < srcEnd; j++) {
                     const dx = px[j] - tx;
                     const dy = py[j] - ty;
                     const distSq = dx * dx + dy * dy + epsSq;
@@ -1004,7 +1106,8 @@ export class SimulationManager {
                 // Inward radial component along the test-point radial direction.
                 aRadSum += -(axTot * cos[a] + ayTot * sin[a]);
             }
-            acc[k] = aRadSum / Naz + this.haloAcc(rk);
+            // Disk pairwise field + dark-matter halo + fixed central BH.
+            acc[k] = aRadSum / Naz + this.haloAcc(rk) + this.bhAcc(rk);
         }
 
         // Light boxcar smoothing (half-width 1 bin) to suppress residual Poisson
@@ -1050,12 +1153,15 @@ export class SimulationManager {
     /**
      * Disk fraction f_disk = v_disk^2 / v_c^2 at radius `r` from the current
      * rotation curve, i.e. the share of the circular speed provided by the disk's
-     * own gravity (vs the halo). Exposed for verification/telemetry of the mass
-     * calibration without reaching into private fields.
+     * own gravity. Both the dark-matter halo and the fixed central black hole are
+     * *external* fields (independent of the disk mass), so both are subtracted -
+     * matching the mass calibration in {@link initSelfGravDisk}, which targets
+     * exactly this ratio. Exposed for verification/telemetry without reaching into
+     * private fields.
      */
     diskFractionAt(r: number): number {
         const total = this.aRadInterp(r) * r;
-        const disk = (this.aRadInterp(r) - this.haloAcc(r)) * r;
+        const disk = (this.aRadInterp(r) - this.haloAcc(r) - this.bhAcc(r)) * r;
         return disk / Math.max(total, 1e-30);
     }
 
