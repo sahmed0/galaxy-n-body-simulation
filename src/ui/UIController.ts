@@ -47,7 +47,7 @@ function showEngineBanner(message: string) {
  */
 export function setupUI(sim: SimulationManager) {
     const engineSelect = document.getElementById('ui-engine') as HTMLSelectElement;
-    const galaxyModeSelect = document.getElementById('ui-galaxy-mode') as HTMLSelectElement;
+    const presetSelect = document.getElementById('ui-preset') as HTMLSelectElement;
     const starsInput = document.getElementById('ui-stars') as HTMLInputElement;
     const gravityInput = document.getElementById('ui-gravity') as HTMLInputElement;
     const gravityVal = document.getElementById('ui-gravity-value') as HTMLElement;
@@ -63,7 +63,7 @@ export function setupUI(sim: SimulationManager) {
     }
 
     engineSelect.value = sim.params.engineType;
-    if (galaxyModeSelect) galaxyModeSelect.value = sim.params.galaxyMode;
+    if (presetSelect) presetSelect.value = sim.params.preset;
 
     // WebGPU may have been ruled out during init() (which runs before setupUI):
     // reflect that immediately, and stay in sync if the device is lost later.
@@ -94,11 +94,11 @@ export function setupUI(sim: SimulationManager) {
         await sim.switchEngine(sim.params.engineType);
     });
 
-    if (galaxyModeSelect) {
-        galaxyModeSelect.addEventListener('change', async (e) => {
+    if (presetSelect) {
+        presetSelect.addEventListener('change', async (e) => {
             const target = e.target as HTMLSelectElement;
-            sim.params.galaxyMode = target.value as 'core' | 'selfgrav';
-            // Changing the model rebuilds the initial conditions.
+            sim.params.preset = target.value as 'accretion' | 'galaxy';
+            // Changing the preset rebuilds the initial conditions.
             await sim.restart();
         });
     }

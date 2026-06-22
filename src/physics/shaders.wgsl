@@ -45,7 +45,7 @@ fn sim_update(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
 
   // 1b. Pinned central black hole: when active (self-grav preset), index 0 is the
   // fixed, inert BH marker. It feels no force and never moves - pass it through
-  // unchanged so it stays at the origin. Its CORE_MASS drives the render glow.
+  // unchanged so it stays at the origin. Its GALAXY_CENTRAL_BH_MASS drives the render glow.
   if (index == 0u && params.blackHoleMass > 0.0) {
     particlesOut[0] = particlesIn[0];
     return;

@@ -24,7 +24,7 @@ export const ENGINE_PRESETS = {
 };
 
 /**
- * Base radius for galaxy particle distribution generation. Used by the "core"
+ * Base radius for galaxy particle distribution generation. Used by the accretion
  * preset, which seeds the disk in the annulus
  * [DISK_INNER_RADIUS, DISK_INNER_RADIUS + GALAXY_RADIUS]. The self-gravitating
  * preset instead uses an exponential profile (see {@link DISK_SCALE_LENGTH}).
@@ -32,16 +32,18 @@ export const ENGINE_PRESETS = {
 export const GALAXY_RADIUS = 500;
 
 /**
- * Inner radius of the "core"-preset annulus (see {@link GALAXY_RADIUS}).
+ * Inner radius of the accretion-preset annulus (see {@link GALAXY_RADIUS}).
  */
 export const DISK_INNER_RADIUS = 50;
 
 /**
- * Mass of the central core object (SMBH) in the "core" galaxy preset. The
- * self-gravitating preset has no central point mass: its rotation is set by the
- * disk's own gravity plus the dark-matter halo.
+ * Mass of the galaxy preset's fixed central black hole (the source mass folded
+ * into the measured rotation curve via {@link SimulationManager.bhAcc}). The
+ * accretion preset's central SMBH currently reuses this same value (raised to a
+ * dedicated ACCRETION_BH_MASS in a later phase). The value is unchanged from the
+ * old shared central-mass constant.
  */
-export const CORE_MASS = 100;
+export const GALAXY_CENTRAL_BH_MASS = 100;
 
 /**
  * Exponential scale length R_d of the self-gravitating disk:
@@ -65,7 +67,7 @@ export const DISK_TRUNCATION = 4;
  * (see {@link DISK_FRACTION_RADIUS_FACTOR}). This constant only sets the mass at which
  * the disk's force *shape* is first measured; since the disk's radial force is linear
  * in total mass, its exact value cancels out of the calibration. Keep it a sane
- * positive number. Unused by the "core" preset, where the disk is just the raw
+ * positive number. Unused by the accretion preset, where the disk is just the raw
  * Salpeter masses (test particles).
  */
 export const SELF_GRAV_DISK_MASS = 1e6;
@@ -95,7 +97,7 @@ export const TOOMRE_Q = 1.3;
  * Gravitational softening for the self-gravitating disk, expressed as a fraction
  * of the local inter-particle spacing at the half-mass radius (see
  * {@link SimulationManager.effectiveSoftening}). The engine presets use
- * softening = 1.0, which is correct for the central-mass-dominated "core" preset
+ * softening = 1.0, which is correct for the central-mass-dominated accretion preset
  * but far smaller than the disk's particle spacing. With self-gravity ON that
  * makes the disk collisional: close encounters between the massive macro-particles
  * deliver huge velocity kicks that fling stars out within a crossing time.
@@ -159,7 +161,7 @@ export const SELF_GRAV_ACTIVE_COUNT = 3000;
  * shrinks as the inner well steepens, so too small a value drives dt toward the
  * {@link MIN_DT_FRACTION} floor. Chosen on the order of the disk softening so the
  * BH dominates the centre without crushing the timestep. Only the self-gravitating
- * preset uses a fixed central BH; the "core" preset's SMBH is a live particle
+ * preset uses a fixed central BH; the accretion preset's SMBH is a live particle
  * (index 0) instead, with {@link blackHoleMass} left at 0.
  */
 export const SELF_GRAV_BH_SOFTENING = 25;
@@ -249,10 +251,10 @@ export class SimulationManager {
      */
     params = {
         engineType: 'webgpu',
-        // Galaxy initial-conditions preset:
-        //   'core'     - SMBH/halo-dominated; disk is light (test-particle) -> rings
-        //   'selfgrav' - massive self-gravitating disk tuned to Toomre Q -> spiral arms
-        galaxyMode: 'core' as 'core' | 'selfgrav',
+        // Simulation preset (initial conditions):
+        //   'accretion' - SMBH/halo-dominated; disk is light (test-particle) -> rings
+        //   'galaxy'    - massive self-gravitating disk tuned to Toomre Q -> spiral arms
+        preset: 'galaxy' as 'accretion' | 'galaxy',
         gravity: 1,
         dt: 0.016,
         softening: 1.0,
@@ -267,7 +269,7 @@ export class SimulationManager {
         massThreshold: 1.0,
         // Fixed central black hole. Non-zero only in the self-gravitating preset,
         // where it pins an inert, source-only point mass at the origin (index 0).
-        // The "core" preset leaves this 0 and uses a live SMBH particle instead.
+        // The accretion preset leaves this 0 and uses a live SMBH particle instead.
         blackHoleMass: 0,
         blackHoleSoftening: SELF_GRAV_BH_SOFTENING,
         isPaused: false,
@@ -305,10 +307,10 @@ export class SimulationManager {
                     this.params.softening = preset.softening;
                     this.params.dt = preset.timeStep;
                 }
-                // The preset resets softening to the core-preset value; restore
+                // The preset resets softening to the accretion-preset value; restore
                 // the larger self-gravitating softening so the disk stays stable.
                 this.params.softening = this.effectiveSoftening();
-                // Likewise restore the disk's derived dt (no-op for the "core"
+                // Likewise restore the disk's derived dt (no-op for the accretion
                 // preset) so a preset switch can't leave a stale preset dt on the
                 // self-gravitating disk.
                 this.params.dt = this.computeAdaptiveTimestep();
@@ -408,13 +410,13 @@ export class SimulationManager {
         this.workerBridge?.dispose();
         this.workerBridge = null;
 
-        // The self-gravitating preset pins a fixed, source-only black hole at the
-        // origin (index 0); the "core" preset uses a live SMBH particle instead, so
-        // its analytic BH term stays off. Set this first: it gates which index range
-        // counts as disk sources (see {@link bhStart}/{@link selfGravActiveCount}),
+        // The self-gravitating (galaxy) preset pins a fixed, source-only black hole
+        // at the origin (index 0); the accretion preset uses a live SMBH particle
+        // instead, so its analytic BH term stays off. Set this first: it gates which
+        // index range counts as disk sources (see {@link bhStart}/{@link selfGravActiveCount}),
         // which both effectiveSoftening and the self-grav initial conditions read.
-        this.params.blackHoleMass = this.params.galaxyMode === 'selfgrav' ? CORE_MASS : 0;
-        if (this.params.galaxyMode === 'selfgrav') {
+        this.params.blackHoleMass = this.params.preset === 'galaxy' ? GALAXY_CENTRAL_BH_MASS : 0;
+        if (this.params.preset === 'galaxy') {
             this.params.blackHoleSoftening = SELF_GRAV_BH_SOFTENING;
         }
 
@@ -425,26 +427,26 @@ export class SimulationManager {
         // run with, or the disk starts out of centrifugal balance.
         this.params.softening = this.effectiveSoftening();
 
-        if (this.params.galaxyMode === 'selfgrav') {
+        if (this.params.preset === 'galaxy') {
             this.initSelfGravDisk();
         } else {
-            this.initCoreGalaxy();
+            this.initAccretionDisk();
         }
     }
 
     /**
-     * "Core" preset: a central SMBH (index 0) surrounded by a thin annulus of
+     * Accretion preset: a central SMBH (index 0) surrounded by a thin annulus of
      * Salpeter-sampled test particles. The disk is light, so it behaves as test
      * particles orbiting the SMBH + halo and relaxes into concentric rings.
      */
-    private initCoreGalaxy() {
+    private initAccretionDisk() {
         this.diskMass = 0;
 
         this.state.positionX[0] = 0;
         this.state.positionY[0] = 0;
         this.state.velocityX[0] = 0;
         this.state.velocityY[0] = 0;
-        this.state.mass[0] = CORE_MASS;
+        this.state.mass[0] = GALAXY_CENTRAL_BH_MASS; // TODO(P3): switch to ACCRETION_BH_MASS
         this.state.colors[0] = 0;
         this.state.colors[1] = 0;
         this.state.colors[2] = 0;
@@ -485,7 +487,7 @@ export class SimulationManager {
         }
 
         // The active set is the index range [0, activeCount). Particle 0 is the
-        // central core, so it occupies one slot; add 1 to the count of qualifying
+        // central SMBH, so it occupies one slot; add 1 to the count of qualifying
         // heavy stars (indices 1..tempActiveCount) so none are demoted to passive.
         this.params.activeCount = tempActiveCount + 1;
     }
@@ -498,7 +500,7 @@ export class SimulationManager {
      * centrifugal balance with the engine's actual forces, and warmed to a target
      * Toomre Q, producing swing-amplified transient spiral arms.
      *
-     * The BH (index 0) is an inert, source-only marker: it carries {@link CORE_MASS}
+     * The BH (index 0) is an inert, source-only marker: it carries {@link GALAXY_CENTRAL_BH_MASS}
      * purely so the renderers draw the central glow, sits at the origin, and is
      * excluded from every force sum (its pull on the disk comes from the engines'
      * analytic SMBH term, with its own {@link blackHoleSoftening}). The disk occupies
@@ -523,7 +525,7 @@ export class SimulationManager {
         // heavier (Mdisk / nActive). Passive tracers are given the same value for
         // render parity; it never enters the force sums. The disk source range is
         // [start, start + nActive); set activeCount to its end now, before the field
-        // helpers below read it - mirrors the core preset's "+1" for its index-0 SMBH.
+        // helpers below read it - mirrors the accretion preset's "+1" for its index-0 SMBH.
         this.params.activeCount = start + nActive;
         // The split's correctness depends on the engine honouring activeCount:
         // passive tracers carry a (render-only) nonzero mass, so if the engine
@@ -536,14 +538,14 @@ export class SimulationManager {
         this.diskMass = SELF_GRAV_DISK_MASS;
 
         // Pin the fixed central BH at the origin (inert, source-only marker). Its
-        // CORE_MASS drives the renderers' BH glow; it is never summed as a disk source
-        // and never integrated (the engines skip index 0 when blackHoleMass > 0).
+        // GALAXY_CENTRAL_BH_MASS drives the renderers' BH glow; it is never summed as
+        // a disk source and never integrated (the engines skip index 0 when blackHoleMass > 0).
         if (start === 1) {
             this.state.positionX[0] = 0;
             this.state.positionY[0] = 0;
             this.state.velocityX[0] = 0;
             this.state.velocityY[0] = 0;
-            this.state.mass[0] = CORE_MASS;
+            this.state.mass[0] = GALAXY_CENTRAL_BH_MASS;
             this.state.colors[0] = 1;
             this.state.colors[1] = 1;
             this.state.colors[2] = 0.85;
@@ -569,7 +571,7 @@ export class SimulationManager {
             this.state.mass[i] = seedMass;
 
             // Colour still encodes a sampled stellar (Salpeter) mass for visual
-            // consistency with the core preset; the physical mass is equal.
+            // consistency with the accretion preset; the physical mass is equal.
             const [r, g, b] = massToColor(this.sampleSalpeterMass());
             this.state.colors[i * 3 + 0] = r;
             this.state.colors[i * 3 + 1] = g;
@@ -627,7 +629,7 @@ export class SimulationManager {
             mTarget = Math.min(Math.max(mTarget, M0 * 1e-3), M0 * 1e6);
             // Split the calibrated total over the active set; passive tracers get
             // the same value for render parity (it is never summed as a source).
-            // Index 0 (the BH) keeps CORE_MASS - only disk particles are reset.
+            // Index 0 (the BH) keeps GALAXY_CENTRAL_BH_MASS - only disk particles are reset.
             const m = mTarget / nActive;
             for (let i = start; i < n; i++) this.state.mass[i] = m;
             this.diskMass = mTarget;
@@ -663,7 +665,7 @@ export class SimulationManager {
     /**
      * Draws a stellar mass from a Salpeter IMF over [0.1, 50] (exponent 1.35).
      * Used for particle colours in both presets and for the physical (test-
-     * particle) masses in the "core" preset.
+     * particle) masses in the accretion preset.
      */
     private sampleSalpeterMass(): number {
         const mMin = 0.1;
@@ -783,7 +785,7 @@ export class SimulationManager {
             this.params.dt = this.computeAdaptiveTimestep();
         }
         // Skip index 0 in both presets: it is the central black hole - a live SMBH
-        // for "core", or the fixed pinned marker for self-grav (bhStart() === 1) -
+        // for accretion, or the fixed pinned marker for self-grav (bhStart() === 1) -
         // and must keep its own velocity rather than be re-warmed as a disk star.
         const loopStart = selfGrav ? this.bhStart() : 1;
         for (let i = loopStart; i < this.params.count; i++) {
@@ -802,13 +804,13 @@ export class SimulationManager {
     }
 
     /**
-     * Softening to use given the current galaxy mode and engine. The "core" preset
+     * Softening to use given the current preset and engine. The accretion preset
      * uses the engine preset's softening; the self-gravitating preset overrides it
      * with ~the disk's local inter-particle spacing so the disk is collisionless
      * rather than exploding (see {@link SELF_GRAV_SOFTENING_FACTOR}). Auto-scales
      * with star count. The base is taken from the engine preset (not the current
      * params.softening) so a stale self-gravitating value can't leak back into the
-     * "core" preset when toggling modes on an engine that doesn't reset it.
+     * accretion preset when toggling modes on an engine that doesn't reset it.
      *
      * The exponential disk is centrally concentrated, so the *mean*-area spacing
      * would under-soften the dense centre. We instead use the local spacing at the
@@ -838,7 +840,7 @@ export class SimulationManager {
      * reserves index 0 for the fixed central black hole (an inert, source-only
      * marker pinned at the origin), so the disk - and every disk source loop and
      * the engines' pairwise/integration loops - starts at 1 when
-     * {@link params.blackHoleMass} is on. The "core" preset leaves the BH term off
+     * {@link params.blackHoleMass} is on. The accretion preset leaves the BH term off
      * (its SMBH is the live index-0 particle), so the disk starts at 0.
      */
     private bhStart(): number {
@@ -849,7 +851,7 @@ export class SimulationManager {
      * Inward radial acceleration from the fixed central black hole at radius `r`:
      * a_BH = G * M_BH * r / (r^2 + eps_BH^2)^1.5, the magnitude the engines'
      * analytic SMBH term produces (distSq = r^2 + eps_BH^2). Zero when the BH is
-     * off (the "core" preset), so it is a no-op there. Folded into the measured
+     * off (the accretion preset), so it is a no-op there. Folded into the measured
      * rotation curve, the mass calibration, and the leapfrog half-kick so the disk
      * starts in centrifugal balance with the BH the engine actually applies.
      */
@@ -864,7 +866,7 @@ export class SimulationManager {
     private effectiveSoftening(): number {
         const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
         const base = preset ? preset.softening : ENGINE_PRESETS.brute.softening;
-        if (this.params.galaxyMode !== 'selfgrav') return base;
+        if (this.params.preset !== 'galaxy') return base;
         // Collisionality is set by the heavy *active* macro-particles (each carries
         // Mdisk / N_active and sources the field), so the relevant mass and spacing
         // are the active ones, not the full-count ones.
@@ -878,7 +880,7 @@ export class SimulationManager {
     }
 
     /**
-     * Timestep to use given the current galaxy mode. The "core" preset keeps the
+     * Timestep to use given the current preset. The accretion preset keeps the
      * engine preset's fixed timeStep (test particles in a static potential). The
      * self-gravitating preset instead *derives* a safe dt from the disk that
      * actually exists, so it can never silently under-resolve when the disk mass
@@ -901,7 +903,7 @@ export class SimulationManager {
     computeAdaptiveTimestep(): number {
         const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
         const presetDt = preset ? preset.timeStep : ENGINE_PRESETS.brute.timeStep;
-        if (this.params.galaxyMode !== 'selfgrav') return presetDt;
+        if (this.params.preset !== 'galaxy') return presetDt;
         const acc = this.rotCurveAcc;
         if (!acc) return presetDt;
 
@@ -939,7 +941,7 @@ export class SimulationManager {
     /**
      * Inward radial acceleration from the dark-matter halo (isothermal-cored)
      * at radius `r`: a_DM = dmStrength^2 * r / (r^2 + r_core^2). Shared by the
-     * "core" preset's analytic rotation curve and the self-gravitating preset's
+     * accretion preset's analytic rotation curve and the self-gravitating preset's
      * measured rotation curve.
      */
     private haloAcc(r: number): number {
@@ -948,14 +950,15 @@ export class SimulationManager {
     }
 
     /**
-     * Total inward radial acceleration on a "core"-preset test particle at radius
-     * `r` from the central SMBH plus the dark-matter halo. (The self-gravitating
-     * preset uses a *measured* rotation curve instead; see
+     * Total inward radial acceleration on an accretion-preset test particle at
+     * radius `r` from the central SMBH plus the dark-matter halo. (The
+     * self-gravitating preset uses a *measured* rotation curve instead; see
      * {@link SimulationManager.buildRotationCurve}.)
      */
     private radialAcc(r: number): number {
         const softenedDistSq = r * r + this.params.softening * this.params.softening;
-        const coreAcc = (this.params.gravity * CORE_MASS) / softenedDistSq;
+        // TODO(P3): switch to ACCRETION_BH_MASS
+        const coreAcc = (this.params.gravity * GALAXY_CENTRAL_BH_MASS) / softenedDistSq;
         return coreAcc + this.haloAcc(r);
     }
 
@@ -984,7 +987,7 @@ export class SimulationManager {
         // field, so its surface density is the one the Toomre-Q warming must use.
         // Passive tracers share the active particles' render mass but must not be
         // double-counted into the field's Sigma; the pinned BH (index 0) carries
-        // CORE_MASS and is excluded entirely (it is not part of the disk's Sigma).
+        // GALAXY_CENTRAL_BH_MASS and is excluded entirely (not part of the disk's Sigma).
         const start = this.bhStart();
         const srcEnd = start + this.selfGravActiveCount();
         const rMax = DISK_TRUNCATION * DISK_SCALE_LENGTH;
@@ -1213,7 +1216,7 @@ export class SimulationManager {
 
     /**
      * Sets the staggered (leapfrog half-step) velocity for star `i` at radius
-     * `dist`. In the "core" preset this is a near-circular orbit with a little
+     * `dist`. In the accretion preset this is a near-circular orbit with a little
      * scatter. In the self-gravitating preset the orbit uses the measured circular
      * speed, is warmed with radial + tangential dispersions for a target Toomre Q,
      * and has its mean azimuthal speed lowered by the asymmetric drift so the warm
@@ -1276,7 +1279,7 @@ export class SimulationManager {
             this.state.velocityX[i] = vx;
             this.state.velocityY[i] = vy;
         } else {
-            // --- Core-dominated: near-circular with mild scatter ---
+            // --- Accretion (central-mass-dominated): near-circular with mild scatter ---
             const aTot = this.radialAcc(r);
             const vCirc = Math.sqrt(Math.max(aTot * r, 0));
             const velocity = vCirc * (0.9 + Math.random() * 0.2);
@@ -1321,13 +1324,13 @@ export class SimulationManager {
             this.params.softening = preset.softening;
             this.params.dt = preset.timeStep;
         }
-        // The preset resets softening to the core-preset value; restore the
-        // larger self-gravitating softening (no-op for the "core" preset) before
+        // The preset resets softening to the accretion-preset value; restore the
+        // larger self-gravitating softening (no-op for the accretion preset) before
         // softResetVelocities recomputes the IC, which reads params.softening.
         this.params.softening = this.effectiveSoftening();
         // Same for dt: restore the disk's derived dt so the preset switch doesn't
-        // leave a stale preset dt (no-op for the "core" preset; softResetVelocities
-        // re-derives it again for selfgrav, but this keeps the two in lockstep).
+        // leave a stale preset dt (no-op for the accretion preset; softResetVelocities
+        // re-derives it again for galaxy, but this keeps the two in lockstep).
         this.params.dt = this.computeAdaptiveTimestep();
 
         this.softResetVelocities();

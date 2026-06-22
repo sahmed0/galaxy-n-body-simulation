@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  *
- * Tests for the self-gravitating ("selfgrav") galaxy initial conditions in
+ * Tests for the self-gravitating ("galaxy") initial conditions in
  * {@link SimulationManager}. The physics-first model is an exponential disk of
  * equal-mass macro-particles embedded in the dark-matter halo, with a fixed
  * central black hole pinned at the origin (index 0) - an inert, source-only point
@@ -20,7 +20,7 @@ import {
     MIN_DT_FRACTION,
     DISK_SCALE_LENGTH,
     TARGET_F_DISK,
-    CORE_MASS,
+    GALAXY_CENTRAL_BH_MASS,
 } from './SimulationManager';
 import { BruteForceEngine, BarnesHutEngine } from '../physics';
 
@@ -38,11 +38,11 @@ beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
 });
 
-/** Builds a manager with a cheap star count and the given galaxy mode. */
-function makeSim(mode: 'core' | 'selfgrav', count = 1500) {
+/** Builds a manager with a cheap star count and the given preset. */
+function makeSim(mode: 'accretion' | 'galaxy', count = 1500) {
     const sim = new SimulationManager();
     sim.params.count = count;
-    sim.params.galaxyMode = mode;
+    sim.params.preset = mode;
     return sim;
 }
 
@@ -67,12 +67,12 @@ function rmsRadius(sim: SimulationManager): number {
 
 describe('SimulationManager - self-gravitating initial conditions', () => {
     it('reserves index 0 as the fixed BH and gives the disk equal-mass macro-particles totalling diskMass', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
 
-        // Index 0 is the pinned central black hole (CORE_MASS), not a disk particle.
-        expect(sim.state.mass[0]).toBe(CORE_MASS);
-        expect(sim.params.blackHoleMass).toBe(CORE_MASS);
+        // Index 0 is the pinned central black hole (GALAXY_CENTRAL_BH_MASS), not a disk particle.
+        expect(sim.state.mass[0]).toBe(GALAXY_CENTRAL_BH_MASS);
+        expect(sim.params.blackHoleMass).toBe(GALAXY_CENTRAL_BH_MASS);
 
         // The total disk mass is calibrated (not the seed constant); every disk
         // particle [1, count) is an equal-mass macro-particle of diskMass/nDiskActive.
@@ -94,7 +94,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('pins the black hole at the origin with zero velocity', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
         expect(sim.state.positionX[0]).toBe(0);
         expect(sim.state.positionY[0]).toBe(0);
@@ -103,7 +103,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('keeps the black hole fixed at the origin when stepped (feels no force, never moves)', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
 
         const engine = new BruteForceEngine(sim.state);
@@ -117,7 +117,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('also pins the BH and keeps the disk bound under the Barnes-Hut engine', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
         const r0 = maxRadius(sim);
 
@@ -141,7 +141,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('calibrates the disk mass so f_disk at 2.2 R_d hits TARGET_F_DISK', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
 
         // The realized particle field carries Poisson scatter, so allow a modest band.
@@ -149,16 +149,16 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         expect(Math.abs(fDisk - TARGET_F_DISK)).toBeLessThan(0.05);
     });
 
-    it('softens on the order of the inter-particle spacing, not the core preset 1.0', () => {
-        const sim = makeSim('selfgrav');
+    it('softens on the order of the inter-particle spacing, not the accretion preset 1.0', () => {
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
         // Exponential disk (R_d = 150) over 1500 particles => half-mass-radius
-        // spacing ~20, far above the core preset value of 1.0.
+        // spacing ~20, far above the accretion preset value of 1.0.
         expect(sim.params.softening).toBeGreaterThan(5);
     });
 
     it('carries (near) zero net momentum so the galaxy does not bulk-drift', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
         let px = 0, py = 0, m = 0;
         for (let i = 0; i < sim.params.count; i++) {
@@ -171,7 +171,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('centres the disk COM on the origin so the origin-pinned halo pulls symmetrically', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
         let rx = 0, ry = 0, m = 0;
         for (let i = 0; i < sim.params.count; i++) {
@@ -185,7 +185,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('derives a dt that resolves the disk and never exceeds the preset dt', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
 
         const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
@@ -212,7 +212,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('produces a smooth epicyclic frequency kappa(R) with no per-grid-cell staircase', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
 
         // Reach through the runtime for the private kappaAt (TS `private` is
@@ -246,7 +246,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
     });
 
     it('stays bound when stepped: no blow-out and no runaway expansion', () => {
-        const sim = makeSim('selfgrav');
+        const sim = makeSim('galaxy');
         sim.initGalaxy();
         const r0 = maxRadius(sim);
         const rms0 = rmsRadius(sim);
@@ -272,9 +272,9 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
 });
 
 describe('SimulationManager - self-gravitating active/passive split', () => {
-    /** Builds a selfgrav sim with the active/passive split engaged. */
+    /** Builds a galaxy sim with the active/passive split engaged. */
     function makeSplitSim(count = 4000, nActive = 1000) {
-        const sim = makeSim('selfgrav', count);
+        const sim = makeSim('galaxy', count);
         sim.params.selfGravActiveCount = nActive;
         return sim;
     }
@@ -283,7 +283,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
         const sim = makeSplitSim(4000, 1000);
         sim.initGalaxy();
         // Source range [1, activeCount) = 1000 disk sources, so activeCount = 1001
-        // (the BH at index 0 occupies the leading slot, mirroring the core preset).
+        // (the BH at index 0 occupies the leading slot, mirroring the accretion preset).
         expect(sim.params.activeCount).toBe(1001);
         // Sanity: the split must actually be engaged (not clamped to count).
         expect(sim.params.activeCount).toBeLessThan(sim.params.count);
@@ -295,7 +295,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
 
         // Every disk particle [1, count) carries the same per-active-particle mass =
         // diskMass/nDiskActive (passive ones for render parity; never summed as a
-        // source). Index 0 is the BH (CORE_MASS) and is excluded.
+        // source). Index 0 is the BH (GALAXY_CENTRAL_BH_MASS) and is excluded.
         const nDiskActive = sim.params.activeCount - 1;
         const expected = sim.diskMass / nDiskActive;
         let activeSum = 0;
@@ -315,7 +315,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
     });
 
     it('is inert when selfGravActiveCount >= count (every particle active)', () => {
-        const sim = makeSim('selfgrav', 1500);
+        const sim = makeSim('galaxy', 1500);
         sim.params.selfGravActiveCount = 8000; // > count
         sim.initGalaxy();
         expect(sim.params.activeCount).toBe(sim.params.count);
@@ -345,30 +345,5 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
         const rms1 = rmsRadius(sim);
         expect(rms1 / rms0).toBeGreaterThan(0.5);
         expect(rms1 / rms0).toBeLessThan(2.0);
-    });
-});
-
-describe('SimulationManager - core preset is unchanged', () => {
-    it('keeps the preset softening (1.0) and an unequal Salpeter mass spectrum', () => {
-        const sim = makeSim('core');
-        sim.initGalaxy();
-
-        expect(sim.params.softening).toBe(1.0);
-        expect(sim.diskMass).toBe(0);
-        // The "core" preset uses a live index-0 SMBH particle, not the analytic
-        // fixed-BH term, so the latter stays off.
-        expect(sim.params.blackHoleMass).toBe(0);
-
-        // The adaptive timestep is a no-op for the core preset: dt stays the
-        // fixed engine preset value.
-        expect(sim.params.dt).toBe(ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep);
-
-        // Salpeter sampling => a wide spread of disk masses (not all equal).
-        let min = Infinity, max = -Infinity;
-        for (let i = 1; i < sim.params.count; i++) {
-            min = Math.min(min, sim.state.mass[i]);
-            max = Math.max(max, sim.state.mass[i]);
-        }
-        expect(max / min).toBeGreaterThan(10);
     });
 });

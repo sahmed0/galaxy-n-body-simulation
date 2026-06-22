@@ -21,9 +21,9 @@ function mountUI() {
             <option value="barnes">CPU: Barnes-Hut</option>
             <option value="webgpu">GPU: WebGPU</option>
         </select>
-        <select id="ui-galaxy-mode">
-            <option value="core">core</option>
-            <option value="selfgrav">selfgrav</option>
+        <select id="ui-preset">
+            <option value="galaxy">galaxy</option>
+            <option value="accretion">accretion</option>
         </select>
         <input id="ui-stars" />
         <input id="ui-gravity" />
@@ -45,7 +45,7 @@ function makeSimStub(overrides: Partial<SimulationManager> = {}) {
     return {
         params: {
             engineType: 'webgpu',
-            galaxyMode: 'core',
+            preset: 'galaxy',
             count: 10000,
             gravity: 1,
             dmStrength: 400,

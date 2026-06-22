@@ -133,7 +133,7 @@ export class BarnesHutEngine implements PhysicsEngine {
         this.root = QuadTree.create(boundary, 4);
 
         // Insert only particles with mass >= threshold. Skip index 0 when it is the
-        // pinned BH marker: it must not act as a tree source (CORE_MASS would swamp
+        // pinned BH marker: it must not act as a tree source (GALAXY_CENTRAL_BH_MASS would swamp
         // the disk field) - its pull comes from the analytic SMBH term in §2b.
         for (let i = start; i < n; i++) {
             if (mass[i] >= massThreshold) {
