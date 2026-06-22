@@ -1424,7 +1424,7 @@ export class SimulationManager {
         }
 
         if (this.renderer) {
-            (this.renderer as any).state = this.state;
+            this.renderer.state = this.state;
         }
 
         this.lastFrameTime = 0;

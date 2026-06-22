@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // behaves (init succeeds vs. throws) and inspect the instances that were built.
 const mockState = vi.hoisted(() => ({
     initBehavior: 'success' as 'success' | 'fail',
-    instances: [] as any[],
+    instances: [] as unknown[],
     reset() {
         this.initBehavior = 'success';
         this.instances = [];
@@ -75,6 +75,10 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** Fake device-loss payload matching the shape the recovery path reads. */
 const lostInfo = (reason: string): GPUDeviceLostInfo =>
     ({ reason, message: 'mock loss' } as unknown as GPUDeviceLostInfo);
+
+// Reaches the private device-loss handler that production code wires to the
+// engine; TS `private` is compile-time only, so the tests drive it directly.
+type DeviceLossDriver = { onWebGpuDeviceLost(info: GPUDeviceLostInfo): Promise<void> };
 
 function makeSim() {
     const sim = new SimulationManager();
@@ -191,7 +195,7 @@ describe('SimulationManager - runtime WebGPU device loss', () => {
         const gpuEngine = sim.webGpuEngine;
 
         // Simulate a device loss; recovery init succeeds (default behaviour).
-        await (sim as any).onWebGpuDeviceLost(lostInfo('unknown'));
+        await (sim as unknown as DeviceLossDriver).onWebGpuDeviceLost(lostInfo('unknown'));
         await flush();
 
         expect(sim.webGpuAvailable).toBe(true);
@@ -209,7 +213,7 @@ describe('SimulationManager - runtime WebGPU device loss', () => {
 
         // Recovery attempt fails -> permanent fallback.
         mockState.initBehavior = 'fail';
-        await (sim as any).onWebGpuDeviceLost(lostInfo('unknown'));
+        await (sim as unknown as DeviceLossDriver).onWebGpuDeviceLost(lostInfo('unknown'));
         await flush();
 
         expect(sim.webGpuAvailable).toBe(false);
@@ -229,13 +233,13 @@ describe('SimulationManager - runtime WebGPU device loss', () => {
         sim.onEngineFallback = fallbackSpy;
 
         // First loss: recovers successfully, spending the one-time retry.
-        await (sim as any).onWebGpuDeviceLost(lostInfo('unknown'));
+        await (sim as unknown as DeviceLossDriver).onWebGpuDeviceLost(lostInfo('unknown'));
         await flush();
         expect(sim.webGpuAvailable).toBe(true);
         expect(fallbackSpy).not.toHaveBeenCalled();
 
         // Second loss: no retry budget left -> permanent CPU fallback.
-        await (sim as any).onWebGpuDeviceLost(lostInfo('destroyed'));
+        await (sim as unknown as DeviceLossDriver).onWebGpuDeviceLost(lostInfo('destroyed'));
         await flush();
 
         expect(sim.webGpuAvailable).toBe(false);
@@ -254,7 +258,7 @@ describe('SimulationManager - runtime WebGPU device loss', () => {
         const fallbackSpy = vi.fn();
         sim.onEngineFallback = fallbackSpy;
 
-        await (sim as any).onWebGpuDeviceLost(lostInfo('unknown'));
+        await (sim as unknown as DeviceLossDriver).onWebGpuDeviceLost(lostInfo('unknown'));
         await flush();
 
         expect(fallbackSpy).not.toHaveBeenCalled();

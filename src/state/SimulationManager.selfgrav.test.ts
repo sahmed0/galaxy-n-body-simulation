@@ -24,6 +24,16 @@ import {
 } from './SimulationManager';
 import { BruteForceEngine, BarnesHutEngine } from '../physics';
 
+// Reaches the private rotation-curve internals (TS `private` is compile-time
+// only) so the tests can sample the measured curve and derived frequencies.
+interface SelfGravInternals {
+    rotCurveAcc: Float64Array;
+    rotCurveRMin: number;
+    rotCurveRMax: number;
+    vCircAt(r: number): number;
+    kappaAt(r: number): number;
+}
+
 beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
 });
@@ -188,7 +198,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         // The fastest orbit (peak angular frequency over the measured rotation
         // curve) must be resolved by at least ~30 leapfrog steps. Reach through
         // the runtime for the private curve (TS `private` is compile-time only).
-        const s = sim as any;
+        const s = sim as unknown as SelfGravInternals;
         const acc: Float64Array = s.rotCurveAcc;
         let omegaMax = 0;
         for (let k = 0; k < acc.length; k++) {
@@ -211,7 +221,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         // large cell-to-cell jumps. Start at 0.5 R_d: inside that the fixed central
         // BH (softening ~25) makes kappa genuinely Keplerian-steep, so the cell-to-
         // cell change there is physical, not a staircase artifact.
-        const s = sim as any;
+        const s = sim as unknown as SelfGravInternals;
         const rLo = 0.5 * DISK_SCALE_LENGTH;
         const rHi = 3 * DISK_SCALE_LENGTH;
         const N = 200;

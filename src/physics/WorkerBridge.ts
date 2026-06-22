@@ -13,7 +13,7 @@ export class WorkerBridge implements PhysicsEngine {
     private worker: Worker;
     private memory: PhysicsMemory;
     private state: PhysicsState;
-    private pingInterval: number | null = null;
+    private pingInterval: ReturnType<typeof setInterval> | null = null;
     private lastPingTime = 0;
     private lastLatencyMs = 0;
 
@@ -59,7 +59,7 @@ export class WorkerBridge implements PhysicsEngine {
         this.pingInterval = setInterval(() => {
             this.lastPingTime = performance.now();
             this.worker.postMessage({ type: 'PING' });
-        }, 1000) as any;
+        }, 1000);
 
         console.log('[WorkerBridge] Worker spawned and memory shared.');
     }
