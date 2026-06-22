@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import { SimulationManager } from '../state';
+import { SimulationManager, presetDmDefault } from '../state';
 
 /**
  * Disables the "GPU: WebGPU" option in the engine dropdown so it can no longer
@@ -98,6 +98,12 @@ export function setupUI(sim: SimulationManager) {
         presetSelect.addEventListener('change', async (e) => {
             const target = e.target as HTMLSelectElement;
             sim.params.preset = target.value as 'accretion' | 'galaxy';
+            // Reset *only* DM to the new preset's default (galaxy keeps its halo,
+            // accretion turns it off), preserving Stars & Gravity. This DM reset
+            // lives here only - the plain Restart button preserves all user state.
+            sim.params.dmStrength = presetDmDefault(sim.params.preset);
+            darkMatterInput.value = sim.params.dmStrength.toString();
+            if (darkMatterVal) darkMatterVal.textContent = sim.params.dmStrength.toFixed(0);
             // Changing the preset rebuilds the initial conditions.
             await sim.restart();
         });

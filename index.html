@@ -26,21 +26,21 @@
           ],
         })
       "></script>
-  <title>Galactic N-Body Simulation | Sajid Ahmed</title>
-  <meta name="title" content="Galactic N-Body Simulation | Sajid Ahmed" />
-  <meta name="description" content="A high-performance interactive galaxy simulation built with WebGPU and WGSL." />
+  <title>N-Body Simulation | Sajid Ahmed</title>
+  <meta name="title" content="N-Body Simulation | Sajid Ahmed" />
+  <meta name="description" content="A high-performance interactive N-body simulation — a self-gravitating spiral galaxy and an SMBH accretion disk — built with WebGPU and WGSL." />
 
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://galaxy.sajidahmed.co.uk/index.html" />
-  <meta property="og:title" content="Galactic N-Body Simulation | Sajid Ahmed" />
+  <meta property="og:title" content="N-Body Simulation | Sajid Ahmed" />
   <meta property="og:description"
     content="Witness the gravity of thousands of stars in real-time using modern WebGPU technology." />
   <meta property="og:image" content="https://galaxy.sajidahmed.co.uk/preview.png" />
 
   <meta property="twitter:card" content="summary_large_image" />
   <meta property="twitter:url" content="https://galaxy.sajidahmed.co.uk/index.html" />
-  <meta property="twitter:title" content="Galactic N-Body Simulation | Sajid Ahmed" />
-  <meta property="twitter:description" content="Interactive galaxy simulation powered by WebGPU." />
+  <meta property="twitter:title" content="N-Body Simulation | Sajid Ahmed" />
+  <meta property="twitter:description" content="Interactive N-body astrophysics simulation powered by WebGPU." />
   <meta property="twitter:image" content="https://galaxy.sajidahmed.co.uk/preview.png" />
 
   <style>
@@ -569,7 +569,7 @@
   <div class="control-panel">
     <!-- Main Header -->
     <div class="main-header">
-      <h1 class="main-header-title">Galactic N-Body Simulation</h1>
+      <h1 class="main-header-title">N-Body Simulation</h1>
       <div class="socials">
         <a href="https://sajidahmed.co.uk" rel="noopener"><i class="kiwi-logo"></i></a>
         <a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank" rel="noopener"><i
@@ -686,13 +686,15 @@
       <h3>Isothermal Dark Matter Halo</h3>
       <p>
         Visible matter alone cannot account for the observed flat rotation
-        curves of galaxies. To model this without the computational overhead
-        of millions of unseen particles, the simulation implements an implicit
-        Isothermal Dark Matter Halo force.
+        curves of galaxies. In the Galaxy (spiral) preset, the simulation
+        models this without the computational overhead of millions of unseen
+        particles by implementing an implicit Isothermal Dark Matter Halo
+        force. (The halo is tunable and off by default in the Accretion Disk
+        preset, where a single dominant black hole governs the dynamics.)
       </p>
       <p>
         This adds an inward acceleration component directed towards the
-        galactic center, parameterized by:
+        system's center, parameterized by:
       </p>
       $$ a_{dm} = -\frac{V_{flat}^2 \cdot r}{r^2 + \epsilon_{core}^2} $$
       <p>
@@ -731,6 +733,27 @@
         intense blue-white hues, grading down to yellow, orange, and deep red
         for the numerous lightweight passive stars.
       </p>
+
+      <h3>Simulation Presets</h3>
+      <p>
+        The same N-body engine drives two distinct astrophysical regimes,
+        selectable from the simulation's control panel:
+      </p>
+      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+        <li>
+          <strong>Galaxy (spiral):</strong> A massive, self-gravitating
+          exponential disk tuned to the Toomre $Q$ stability criterion and
+          embedded in a dark-matter halo, which develops transient spiral arms
+          as the stars shear and self-organise.
+        </li>
+        <li>
+          <strong>Accretion Disk (SMBH):</strong> A dominant central black
+          hole surrounded by a collisionless, Keplerian test-particle disk —
+          the ballistic limit, with no viscous inspiral. An adaptive timestep
+          resolves the deep central well, and the dark-matter halo is off by
+          default so the SMBH alone governs the orbits.
+        </li>
+      </ul>
     </div>
 
     <div id="content-MATH-02">
@@ -753,7 +776,7 @@
       <p>
         Leapfrog integration guarantees time-reversibility and reliable energy
         conservation over long durations, making it a critical algorithm for
-        high-fidelity galactic dynamics where performance and accuracy must be
+        high-fidelity N-body dynamics where performance and accuracy must be
         strictly balanced.
       </p>
     </div>
@@ -772,7 +795,7 @@
         While this ensures perfect accuracy, the time complexity scales
         quadratically at $O(N^2)$. Simulating 10,000 particles requires
         100,000,000 force calculations per frame, making it intractable for
-        macroscopic galactic simulations on typical hardware, but useful as a
+        large-scale N-body simulations on typical hardware, but useful as a
         baseline truth for smaller clusters.
       </p>
 
@@ -794,10 +817,10 @@
 
       <h3>Active/Passive Computational Subsetting</h3>
       <p>
-        Even with Barnes-Hut, rendering a visually dense galaxy of 100,000+
-        stars on CPU threads is challenging. To solve this, we introduce an
-        Active/Passive heuristic, splitting the galaxy into two mass-distinct
-        sets:
+        Even with Barnes-Hut, rendering a visually dense N-body system of
+        100,000+ stars on CPU threads is challenging. To solve this, we
+        introduce an Active/Passive heuristic, splitting the system into two
+        mass-distinct sets:
       </p>
       <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
         <li>
@@ -808,7 +831,7 @@
         <li>
           <strong>Passive Set ($M_{light}$):</strong> The vast majority of
           low-mass stars. These stars possess negligible mass compared to the
-          galactic core. They do <em>not</em> exert gravity and are
+          system's massive bodies. They do <em>not</em> exert gravity and are
           <em>not</em> inserted into the QuadTree, but they do receive
           gravitational pull from the active set.
         </li>
@@ -816,7 +839,7 @@
       <p>
         This hybrid approach effectively reduces the computational complexity
         from $O(N \log N)$ to $O(N \cdot k)$ where $k \ll N$, allowing for
-        massive visual density while preserving accurate macroscopic galactic
+        massive visual density while preserving accurate macroscopic N-body
         dynamics.
       </p>
     </div>

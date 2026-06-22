@@ -39,11 +39,39 @@ export const DISK_INNER_RADIUS = 50;
 /**
  * Mass of the galaxy preset's fixed central black hole (the source mass folded
  * into the measured rotation curve via {@link SimulationManager.bhAcc}). The
- * accretion preset's central SMBH currently reuses this same value (raised to a
- * dedicated ACCRETION_BH_MASS in a later phase). The value is unchanged from the
- * old shared central-mass constant.
+ * value is unchanged from the old shared central-mass constant. The accretion
+ * preset uses its own, far larger {@link ACCRETION_BH_MASS}.
  */
 export const GALAXY_CENTRAL_BH_MASS = 100;
+
+/**
+ * Mass of the accretion preset's central SMBH (the live particle at index 0 and
+ * the source of {@link SimulationManager.radialAcc}'s analytic Keplerian field).
+ *
+ * Over the test-particle annulus R in [DISK_INNER_RADIUS, DISK_INNER_RADIUS +
+ * GALAXY_RADIUS] = [50, 550] at gravity = 1, this gives inner circular speed
+ * v_c(50) = sqrt(1e5/50) ~ 44 and outer v_c(550) ~ 13 - clearly Keplerian
+ * (v_c proportional to 1/sqrt(r)), with dramatic inner shear, and dwarfing the
+ * total mass of the thousands of Salpeter test particles (0.1-50 each) so they
+ * behave as a collisionless disk orbiting a dominant point mass. The adaptive
+ * timestep ({@link SimulationManager.computeAdaptiveTimestep}) shrinks dt to keep
+ * the fast inner orbits resolved; 1e6 is the next step up if a deeper well is
+ * ever wanted.
+ */
+export const ACCRETION_BH_MASS = 1e5;
+
+/**
+ * Default dark-matter halo strength for each preset. The galaxy wants a halo
+ * (a flat outer rotation curve); the accretion preset is a clean Keplerian
+ * test-particle disk about a dominant SMBH, so DM is off by default. This is the
+ * single source for both the initial {@link SimulationManager.params}.dmStrength
+ * and the DM-only reset performed when the user switches presets in the UI.
+ * @param preset - The simulation preset.
+ * @returns The default dmStrength for that preset (0 for accretion, 250 for galaxy).
+ */
+export function presetDmDefault(preset: 'accretion' | 'galaxy'): number {
+    return preset === 'accretion' ? 0 : 250;
+}
 
 /**
  * Exponential scale length R_d of the self-gravitating disk:
@@ -277,7 +305,9 @@ export class SimulationManager {
         cameraX: 0.0,
         cameraY: 0.0,
         cameraTilt: 0.6,
-        dmStrength: 250.0,
+        // Tied to the default preset (galaxy) via presetDmDefault so the two
+        // can't drift apart. The UI resets this to presetDmDefault(preset) on switch.
+        dmStrength: presetDmDefault('galaxy'),
         dmCoreRadius: 1200.0,
         shouldShowQuadTree: false,
     };
@@ -446,10 +476,11 @@ export class SimulationManager {
         this.state.positionY[0] = 0;
         this.state.velocityX[0] = 0;
         this.state.velocityY[0] = 0;
-        this.state.mass[0] = GALAXY_CENTRAL_BH_MASS; // TODO(P3): switch to ACCRETION_BH_MASS
-        this.state.colors[0] = 0;
-        this.state.colors[1] = 0;
-        this.state.colors[2] = 0;
+        this.state.mass[0] = ACCRETION_BH_MASS;
+        // Warm glow for the dominant central SMBH (instead of an invisible black point).
+        this.state.colors[0] = 1;
+        this.state.colors[1] = 1;
+        this.state.colors[2] = 0.85;
 
         const particles: { x: number; y: number; mass: number; r: number; g: number; b: number; dist: number }[] = [];
 
@@ -989,8 +1020,7 @@ export class SimulationManager {
      */
     private radialAcc(r: number): number {
         const softenedDistSq = r * r + this.params.softening * this.params.softening;
-        // TODO(P3): switch to ACCRETION_BH_MASS
-        const coreAcc = (this.params.gravity * GALAXY_CENTRAL_BH_MASS) / softenedDistSq;
+        const coreAcc = (this.params.gravity * ACCRETION_BH_MASS) / softenedDistSq;
         return coreAcc + this.haloAcc(r);
     }
 

@@ -184,7 +184,7 @@ export class BruteForceEngine implements PhysicsEngine {
                 const distSq = pix * pix + piy * piy + smbhSofteningSq;
                 const dist = Math.sqrt(distSq);
 
-                // Force perfectly directed towards the galactic centre (0,0)
+                // Force perfectly directed towards the central mass at (0,0)
                 const aSMBH = (G * smbhMass * dt) / (distSq * dist);
                 vx[i] -= aSMBH * pix;
                 vy[i] -= aSMBH * piy;

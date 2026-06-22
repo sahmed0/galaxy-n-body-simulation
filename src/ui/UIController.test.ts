@@ -92,6 +92,58 @@ describe('setupUI - WebGPU already unavailable at startup', () => {
     });
 });
 
+describe('setupUI - preset switch resets only DM', () => {
+    const presetSelect = () => document.getElementById('ui-preset') as HTMLSelectElement;
+    const darkMatterInput = () => document.getElementById('ui-dark-matter') as HTMLInputElement;
+
+    it('resets DM to the preset default but preserves Stars and Gravity', async () => {
+        const sim = makeSimStub({
+            params: {
+                engineType: 'webgpu',
+                preset: 'galaxy',
+                count: 7777,
+                gravity: 3.3,
+                dmStrength: 250,
+                shouldShowQuadTree: false,
+            },
+        } as unknown as Partial<SimulationManager>);
+        setupUI(sim);
+
+        presetSelect().value = 'accretion';
+        presetSelect().dispatchEvent(new Event('change'));
+        await Promise.resolve();
+
+        // DM snaps to the accretion default; Stars & Gravity are untouched.
+        expect(sim.params.dmStrength).toBe(0);
+        expect(sim.params.count).toBe(7777);
+        expect(sim.params.gravity).toBe(3.3);
+        expect(darkMatterInput().value).toBe('0');
+        expect(sim.restart).toHaveBeenCalled();
+    });
+
+    it('restores the galaxy DM default when switching accretion -> galaxy', async () => {
+        const sim = makeSimStub({
+            params: {
+                engineType: 'webgpu',
+                preset: 'accretion',
+                count: 10000,
+                gravity: 1,
+                dmStrength: 0,
+                shouldShowQuadTree: false,
+            },
+        } as unknown as Partial<SimulationManager>);
+        setupUI(sim);
+
+        presetSelect().value = 'galaxy';
+        presetSelect().dispatchEvent(new Event('change'));
+        await Promise.resolve();
+
+        expect(sim.params.dmStrength).toBe(250);
+        expect(darkMatterInput().value).toBe('250');
+        expect(sim.restart).toHaveBeenCalled();
+    });
+});
+
 describe('setupUI - runtime fallback via onEngineFallback', () => {
     it('wires onEngineFallback to disable the GPU option, sync the select, and show the reason', () => {
         const sim = makeSimStub();
