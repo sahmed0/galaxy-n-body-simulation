@@ -466,6 +466,10 @@ export class SimulationManager {
 
         particles.sort((a, b) => b.mass - a.mass);
 
+        // Derive a safe dt for the analytic orbital field BEFORE the velocity loop:
+        // computeStarVelocity's leapfrog half-step reads params.dt.
+        this.params.dt = this.computeAdaptiveTimestep();
+
         let tempActiveCount = 0;
 
         for (let i = 1; i < this.params.count; i++) {
@@ -880,12 +884,18 @@ export class SimulationManager {
     }
 
     /**
-     * Timestep to use given the current preset. The accretion preset keeps the
-     * engine preset's fixed timeStep (test particles in a static potential). The
-     * self-gravitating preset instead *derives* a safe dt from the disk that
-     * actually exists, so it can never silently under-resolve when the disk mass
-     * (and hence orbital speeds and encounter kicks) is raised: dynamical times
-     * shrink as 1/sqrt(mass) while the preset dt stays fixed.
+     * Timestep to use given the current preset. Both presets *derive* a safe dt
+     * so they can never silently under-resolve when the central mass (and hence
+     * orbital speeds) is raised: dynamical times shrink as 1/sqrt(mass) while the
+     * preset dt stays fixed.
+     *
+     * The accretion preset (test particles in a static SMBH + halo potential)
+     * takes only the orbital-resolution limit, computed analytically from
+     * {@link radialAcc} over the disk annulus - no close-encounter term, since the
+     * test particles are massless to the field and exert no two-body kicks.
+     *
+     * The self-gravitating preset derives its dt from the disk that actually
+     * exists (measured rotation curve + heavy-macro-particle encounters).
      *
      * dt is the minimum of three limits, floored so a mis-scaling can't stall the
      * sim:
@@ -903,6 +913,28 @@ export class SimulationManager {
     computeAdaptiveTimestep(): number {
         const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
         const presetDt = preset ? preset.timeStep : ENGINE_PRESETS.brute.timeStep;
+        if (this.params.preset === 'accretion') {
+            // Resolve the fastest orbit about the central SMBH + halo. Sample
+            // Omega(r) = vCirc(r)/r analytically over the annulus
+            // [DISK_INNER_RADIUS, DISK_INNER_RADIUS + GALAXY_RADIUS]. For a central
+            // mass Omega is monotone-decreasing (peak at the inner edge); the grid is
+            // just robustness against the halo term. No close-encounter limit: the
+            // test particles are massless to the field, so there are no two-body kicks.
+            const rMin = DISK_INNER_RADIUS;
+            const rMax = DISK_INNER_RADIUS + GALAXY_RADIUS;
+            const N = 128;
+            let omegaMax = 0;
+            for (let k = 0; k < N; k++) {
+                const r = rMin + ((rMax - rMin) * k) / (N - 1);
+                if (r <= 0) continue;
+                const vCirc = Math.sqrt(Math.max(this.radialAcc(r) * r, 0));
+                omegaMax = Math.max(omegaMax, vCirc / r);
+            }
+            let dt = presetDt; // limit 1: never faster than the preset.
+            if (omegaMax > 0) dt = Math.min(dt, (2 * Math.PI / omegaMax) / STEPS_PER_ORBIT);
+            // Floor so a pathological choice can't crawl the sim to a halt.
+            return Math.max(dt, presetDt * MIN_DT_FRACTION);
+        }
         if (this.params.preset !== 'galaxy') return presetDt;
         const acc = this.rotCurveAcc;
         if (!acc) return presetDt;

@@ -15,7 +15,7 @@
  * adaptive-timestep and high-central-mass (Keplerian/stability/glow) checks here.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SimulationManager, ENGINE_PRESETS } from './SimulationManager';
+import { SimulationManager, ENGINE_PRESETS, MIN_DT_FRACTION } from './SimulationManager';
 
 beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
@@ -51,5 +51,17 @@ describe('SimulationManager - accretion preset baseline', () => {
             max = Math.max(max, sim.state.mass[i]);
         }
         expect(max / min).toBeGreaterThan(10);
+    });
+});
+
+describe('SimulationManager - accretion adaptive timestep', () => {
+    it('derives a finite dt within [floor, presetDt] for the accretion preset', () => {
+        const sim = makeSim('accretion');
+        sim.initGalaxy();
+        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+        expect(Number.isFinite(sim.params.dt)).toBe(true);
+        expect(sim.params.dt).toBeGreaterThan(0);
+        expect(sim.params.dt).toBeLessThanOrEqual(presetDt);
+        expect(sim.params.dt).toBeGreaterThanOrEqual(presetDt * MIN_DT_FRACTION);
     });
 });
