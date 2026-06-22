@@ -47,8 +47,20 @@ export interface PhysicsParams {
 export interface PhysicsEngine {
     /**
      * Initialises the physics engine with initial conditions.
+     *
+     * Failure contract: an implementation that cannot initialise MUST signal it
+     * by throwing (synchronously) or rejecting (asynchronously) - it must never
+     * resolve into a half-constructed, no-op engine. Callers are expected to
+     * catch this and fall back to another engine. Implementations that depend on
+     * optional platform features (e.g. {@link WebGPUEngine}, which requires
+     * WebGPU) throw a typed {@link WebGPUUnavailableError} so the caller can
+     * distinguish "this backend is unavailable, fall back" from a generic error.
+     *
      * @param n - The total number of bodies in the simulation.
      * @param initialConditions - The structure containing the starting data state.
+     * @throws {WebGPUUnavailableError} (WebGPUEngine) when no usable GPU device
+     *   can be acquired. Other implementations may throw/reject with their own
+     *   error types to indicate an unrecoverable initialisation failure.
      */
     init(n: number, initialConditions: InitialConditionType): void | Promise<void>;
 
@@ -78,4 +90,10 @@ export interface PhysicsEngine {
      * @param activeCount - An optional limit denoting the number of bodies that actively apply forces.
      */
     setParticles?(n: number, initialConditions: InitialConditionType, activeCount?: number): void;
+
+    /**
+     * Releases all engine resources (workers, GPU buffers/device, DOM nodes,
+     * timers). Safe to call more than once; the engine is unusable afterwards.
+     */
+    dispose?(): void;
 }

@@ -5,6 +5,19 @@ import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types
 import shaderWGSL from './shaders.wgsl?raw'; // Vite import for raw string
 
 /**
+ * Thrown by {@link WebGPUEngine.init} when the platform cannot provide a usable
+ * WebGPU device: `navigator.gpu` is missing, no adapter is returned, or device
+ * creation fails. Lets callers distinguish "WebGPU is unavailable, fall back to
+ * a CPU engine" from a generic, possibly transient error.
+ */
+export class WebGPUUnavailableError extends Error {
+    constructor(message: string, options?: ErrorOptions) {
+        super(message, options);
+        this.name = 'WebGPUUnavailableError';
+    }
+}
+
+/**
  * A highly optimised physics engine relying on WebGPU Compute Shaders.
  * Calculates N-Body gravity off the main thread and pipes directly into the render queue.
  */
@@ -36,6 +49,13 @@ export class WebGPUEngine implements PhysicsEngine {
 
     private lastDispatchTimeMs = 0;
 
+    /**
+     * Invoked when the GPU device is lost *after* a successful init (driver reset,
+     * GPU removed, browser policy, OOM). Not fired for an intentional teardown.
+     * The owner (SimulationManager) sets this so it can fall back to a CPU engine.
+     */
+    onDeviceLost: ((info: GPUDeviceLostInfo) => void) | null = null;
+
     constructor() {
         // Create Canvas
         this.canvas = document.createElement('canvas');
@@ -50,24 +70,83 @@ export class WebGPUEngine implements PhysicsEngine {
     }
 
     /**
+     * Drops references to every per-device GPU object so a subsequent {@link init}
+     * rebuilds them from scratch. Called at the start of init() so the engine can
+     * be re-initialised on the same instance (and same canvas) to recover from a
+     * device loss. The dead device's resources are freed implicitly with the
+     * device, so we only need to forget them here.
+     */
+    private resetGpuResources() {
+        this.device = null;
+        this.context = null;
+        this.pipeline = null;
+        this.renderPipeline = null;
+        this.bufferParams = null;
+        this.bufferParticlesA = null;
+        this.bufferParticlesB = null;
+        this.bufferProps = null;
+        this.bindGroupComputeA = null;
+        this.bindGroupComputeB = null;
+        this.bindGroupRenderA = null;
+        this.bindGroupRenderB = null;
+        this.bindGroupLayoutCompute = null;
+        this.bindGroupLayoutRender = null;
+        this.bindGroupParams = null;
+        this.simStep = 0;
+    }
+
+    /**
      * Bootstraps the WebGPU device, canvas context, and constructs the rendering pipelines.
      * @param n - Application's planned element count for memory sizing limits.
      * @param initialState - Base data tracking velocities, weights, and colours.
      * @param activeCount - Threshold parameter separating calculated Heavy components from passive objects.
      */
     async init(n: number, initialState: InitialConditionType, activeCount: number = 0) {
+        // Drop any prior per-device resources so init() can run from scratch. This
+        // makes it safe to call again to re-create the device after a loss: without
+        // it, setParticles() would short-circuit buffer recreation and the bind
+        // groups would still reference the dead device's buffers.
+        this.resetGpuResources();
+
         if (!navigator.gpu) {
-            console.error("WebGPU not supported on this browser.");
-            return;
+            throw new WebGPUUnavailableError('navigator.gpu is missing (WebGPU not supported or disabled).');
         }
 
-        const adapter = await navigator.gpu.requestAdapter();
+        let adapter: GPUAdapter | null;
+        try {
+            adapter = await navigator.gpu.requestAdapter();
+        } catch (err) {
+            throw new WebGPUUnavailableError('navigator.gpu.requestAdapter() threw.', { cause: err });
+        }
         if (!adapter) {
-            console.error("Request Adapter: No WebGPU adapter found.");
-            return;
+            throw new WebGPUUnavailableError('No WebGPU adapter available.');
         }
 
-        this.device = await adapter.requestDevice({ label: 'WebGPUEngine Device' });
+        try {
+            this.device = await adapter.requestDevice({ label: 'WebGPUEngine Device' });
+        } catch (err) {
+            throw new WebGPUUnavailableError('adapter.requestDevice() failed.', { cause: err });
+        }
+
+        // Surface a post-init device loss (driver reset, GPU removed, OOM, browser
+        // policy) to the owner so it can fall back to a CPU engine. A 'destroyed'
+        // reason is an intentional teardown and is deliberately ignored.
+        this.device.lost.then((info) => {
+            if (info.reason === 'destroyed') return;
+            console.error(`WebGPU device lost: ${info.reason} - ${info.message}`);
+            // Drop the dead device so any step()/render() that fire before the
+            // owner recovers no-op via the existing `!this.device` guards rather
+            // than issuing commands against a lost device.
+            this.device = null;
+            this.onDeviceLost?.(info);
+        });
+
+        // Promote otherwise-silent GPU validation / out-of-memory errors so they
+        // are not swallowed into a blank canvas.
+        this.device.addEventListener('uncapturederror', (event) => {
+            console.error('WebGPU uncaptured error:', (event as GPUUncapturedErrorEvent).error);
+        });
+
         this.context = this.canvas.getContext('webgpu') as GPUCanvasContext;
 
         const format = navigator.gpu.getPreferredCanvasFormat();
@@ -428,5 +507,23 @@ export class WebGPUEngine implements PhysicsEngine {
      */
     setVisible(visible: boolean) {
         this.canvas.style.display = visible ? 'block' : 'none';
+    }
+
+    /**
+     * Tears the engine down for good: explicitly frees every GPU buffer, destroys
+     * the device, and removes the canvas appended in the constructor. Destroying
+     * the device resolves `device.lost` with reason `'destroyed'`, which the
+     * loss handler in init() deliberately ignores, so this does NOT trigger the
+     * CPU-fallback path. Idempotent - safe to call more than once.
+     */
+    dispose() {
+        this.bufferParticlesA?.destroy();
+        this.bufferParticlesB?.destroy();
+        this.bufferProps?.destroy();
+        this.bufferParams?.destroy();
+        this.device?.destroy();
+        this.canvas.remove();
+        // Forget every per-device reference so the instance is inert afterwards.
+        this.resetGpuResources();
     }
 }

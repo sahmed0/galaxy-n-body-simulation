@@ -1,7 +1,45 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import { SimulationManager } from '../state';
+import { SimulationManager, presetDmDefault } from '../state';
+
+/**
+ * Disables the "GPU: WebGPU" option in the engine dropdown so it can no longer
+ * be selected once WebGPU has been ruled out.
+ * @param select - The engine <select> element.
+ */
+function disableGpuOption(select: HTMLSelectElement) {
+    const gpuOption = select.querySelector('option[value="webgpu"]') as HTMLOptionElement | null;
+    if (gpuOption) {
+        gpuOption.disabled = true;
+        gpuOption.textContent = 'GPU: WebGPU (unavailable)';
+    }
+}
+
+/**
+ * Shows a transient, dismissable banner notifying the user of an engine change
+ * (e.g. a forced fallback from WebGPU to a CPU engine). Reuses a single banner
+ * element so repeated notices replace rather than stack.
+ * @param message - The text to display.
+ */
+function showEngineBanner(message: string) {
+    let banner = document.getElementById('engine-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'engine-banner';
+        banner.className = 'engine-banner tactical-glass';
+        banner.setAttribute('role', 'alert');
+        document.body.appendChild(banner);
+    }
+    banner.textContent = message;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'engine-banner-close';
+    closeBtn.setAttribute('aria-label', 'Dismiss');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => banner?.remove());
+    banner.appendChild(closeBtn);
+}
 
 /**
  * Initialises and binds HTML UI elements to simulation parameters.
@@ -9,6 +47,7 @@ import { SimulationManager } from '../state';
  */
 export function setupUI(sim: SimulationManager) {
     const engineSelect = document.getElementById('ui-engine') as HTMLSelectElement;
+    const presetSelect = document.getElementById('ui-preset') as HTMLSelectElement;
     const starsInput = document.getElementById('ui-stars') as HTMLInputElement;
     const gravityInput = document.getElementById('ui-gravity') as HTMLInputElement;
     const gravityVal = document.getElementById('ui-gravity-value') as HTMLElement;
@@ -24,6 +63,19 @@ export function setupUI(sim: SimulationManager) {
     }
 
     engineSelect.value = sim.params.engineType;
+    if (presetSelect) presetSelect.value = sim.params.preset;
+
+    // WebGPU may have been ruled out during init() (which runs before setupUI):
+    // reflect that immediately, and stay in sync if the device is lost later.
+    if (!sim.webGpuAvailable) {
+        disableGpuOption(engineSelect);
+        showEngineBanner('WebGPU unavailable - running CPU Barnes-Hut');
+    }
+    sim.onEngineFallback = (reason: string) => {
+        disableGpuOption(engineSelect);
+        engineSelect.value = sim.params.engineType;
+        showEngineBanner(reason);
+    };
     starsInput.value = sim.params.count.toString();
     gravityInput.value = sim.params.gravity.toString();
     if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);
@@ -41,6 +93,21 @@ export function setupUI(sim: SimulationManager) {
         sim.params.engineType = target.value;
         await sim.switchEngine(sim.params.engineType);
     });
+
+    if (presetSelect) {
+        presetSelect.addEventListener('change', async (e) => {
+            const target = e.target as HTMLSelectElement;
+            sim.params.preset = target.value as 'accretion' | 'galaxy';
+            // Reset *only* DM to the new preset's default (galaxy keeps its halo,
+            // accretion turns it off), preserving Stars & Gravity. This DM reset
+            // lives here only - the plain Restart button preserves all user state.
+            sim.params.dmStrength = presetDmDefault(sim.params.preset);
+            darkMatterInput.value = sim.params.dmStrength.toString();
+            if (darkMatterVal) darkMatterVal.textContent = sim.params.dmStrength.toFixed(0);
+            // Changing the preset rebuilds the initial conditions.
+            await sim.restart();
+        });
+    }
 
     starsInput.addEventListener('change', (e) => {
         const target = e.target as HTMLInputElement;

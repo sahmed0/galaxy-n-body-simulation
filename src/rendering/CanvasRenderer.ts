@@ -138,7 +138,7 @@ export class CanvasRenderer {
                 ctx.globalCompositeOperation = 'source-over';
 
                 // 1. Accretion Disk / Light Bending (Glow around)
-                const grad = ctx.createRadialGradient(x, y, 2, x, y, 30);
+                const grad = ctx.createRadialGradient(x, y, 2, x, y, 5);
                 grad.addColorStop(0, 'rgba(255, 251, 221, 1)'); // Event Horizon
                 grad.addColorStop(0.3, 'rgba(255, 251, 221, 1)'); // Inner hot disk
                 grad.addColorStop(0.5, 'rgba(255, 251, 221, 1)'); // Outer glow
@@ -146,7 +146,7 @@ export class CanvasRenderer {
 
                 ctx.fillStyle = grad;
                 ctx.beginPath();
-                ctx.arc(x, y, 50, 0, Math.PI * 2);
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
             }

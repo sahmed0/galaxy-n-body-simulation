@@ -13,7 +13,7 @@ export class WorkerBridge implements PhysicsEngine {
     private worker: Worker;
     private memory: PhysicsMemory;
     private state: PhysicsState;
-    private pingInterval: number | null = null;
+    private pingInterval: ReturnType<typeof setInterval> | null = null;
     private lastPingTime = 0;
     private lastLatencyMs = 0;
 
@@ -59,17 +59,21 @@ export class WorkerBridge implements PhysicsEngine {
         this.pingInterval = setInterval(() => {
             this.lastPingTime = performance.now();
             this.worker.postMessage({ type: 'PING' });
-        }, 1000) as any;
+        }, 1000);
 
         console.log('[WorkerBridge] Worker spawned and memory shared.');
     }
 
     /**
-     * Closes network communication bridging local state cleanly with isolated logic contexts.
+     * Closes network communication bridging local state cleanly with isolated
+     * logic contexts: clears the ping interval and terminates the worker (which
+     * kills it even while it is parked in `Atomics.wait`). Idempotent - a second
+     * call clears nothing and re-terminating an already-dead worker is a no-op.
      */
-    public destroy(): void {
+    public dispose(): void {
         if (this.pingInterval) {
             clearInterval(this.pingInterval);
+            this.pingInterval = null;
         }
         this.worker.terminate();
     }

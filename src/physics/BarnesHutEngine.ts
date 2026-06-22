@@ -55,6 +55,18 @@ export class BarnesHutEngine implements PhysicsEngine {
     }
 
     /**
+     * Releases the pooled QuadTree back to its node pool so it can be reused by a
+     * subsequent engine, then drops the state reference. Idempotent.
+     */
+    public dispose(): void {
+        if (this.root) {
+            this.root.free();
+            this.root = undefined;
+        }
+        this.state = undefined;
+    }
+
+    /**
      * Updates the physics simulation using the Leapfrog integration method and QuadTree spatial partitioning.
      * @param dt - The time step delta to apply to velocities and positions.
      * @param params - A configuration object defining system forces such as gravity and softening.
@@ -73,6 +85,12 @@ export class BarnesHutEngine implements PhysicsEngine {
         // inserted, so sub-threshold bodies act as massless test particles.
         // Masses are strictly positive, so -Infinity admits all of them.
         const massThreshold = params.useActivePassive ? (params.massThreshold || 0) : -Infinity;
+
+        // When a fixed central black hole is active (self-grav preset), index 0 is
+        // its pinned, inert marker: it is excluded from the tree (not a source),
+        // never kicked, and never integrated. Its pull on the disk is the analytic
+        // SMBH term in §2b, with its own softening. `start` skips it everywhere.
+        const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
 
         // --- Leapfrog Step ---
         // 1. Rebuild QuadTree (at time t)
@@ -114,8 +132,10 @@ export class BarnesHutEngine implements PhysicsEngine {
         // Get a new root from the pool
         this.root = QuadTree.create(boundary, 4);
 
-        // Insert only particles with mass >= threshold
-        for (let i = 0; i < n; i++) {
+        // Insert only particles with mass >= threshold. Skip index 0 when it is the
+        // pinned BH marker: it must not act as a tree source (GALAXY_CENTRAL_BH_MASS would swamp
+        // the disk field) - its pull comes from the analytic SMBH term in §2b.
+        for (let i = start; i < n; i++) {
             if (mass[i] >= massThreshold) {
                 this.root.insert(i, this.state);
             }
@@ -128,8 +148,9 @@ export class BarnesHutEngine implements PhysicsEngine {
         const theta = params.theta;
         const softening = params.softening;
 
-        // Calculate forces for ALL particles (indices 0 to N-1)
-        for (let i = 0; i < n; i++) {
+        // Calculate forces for all disk particles (index 0 skipped when it is the
+        // pinned BH marker, which feels no force).
+        for (let i = start; i < n; i++) {
             this.calculateForceAndAddKick(i, this.root, G, theta, softening, dt);
         }
 
@@ -143,7 +164,7 @@ export class BarnesHutEngine implements PhysicsEngine {
             const dmCoreRadiusSq = dmCoreRadius * dmCoreRadius;
             const smbhSofteningSq = (params.blackHoleSoftening || params.softening) ** 2;
 
-            for (let i = 0; i < n; i++) {
+            for (let i = start; i < n; i++) {
                 const pix = px[i];
                 const piy = py[i];
                 const rawDistSq = pix * pix + piy * piy;
@@ -167,7 +188,8 @@ export class BarnesHutEngine implements PhysicsEngine {
         }
 
         // 3. Update Positions x(t+dt) = x(t) + v(t+dt/2) * dt
-        for (let i = 0; i < n; i++) {
+        // Index 0 (the pinned BH marker) is left at the origin.
+        for (let i = start; i < n; i++) {
             px[i] += vx[i] * dt;
             py[i] += vy[i] * dt;
         }

@@ -1,4 +1,4 @@
-# Galactic N-Body Simulation (N > 100,000 particles)
+# N-Body Simulation (N > 100,000 particles)
 
 ![Copyright](https://img.shields.io/badge/Copyright-2026_Sajid_Ahmed-limegreen.svg)
 ![Vite](https://img.shields.io/badge/Vite-7.3.1-purple.svg)
@@ -7,7 +7,12 @@
 
 **[Live Demo](https://galaxy.sajidahmed.co.uk/) • [Documentation](https://github.com/sahmed0/galaxy-n-body-simulation.git)**
 
-A high-performance, real-time galactic N-body simulation leveraging TypeScript, Vite, and WebGPU to model stellar dynamics with computational astrophysics methodologies.
+A high-performance, real-time N-body simulation leveraging TypeScript, Vite, and WebGPU to model gravitational dynamics with computational astrophysics methodologies. It ships two presets: a self-gravitating spiral **galaxy** and a dominant-central-mass **SMBH accretion disk**.
+
+## Simulation Presets
+
+- **Galaxy (spiral)** — a massive, self-gravitating exponential disk tuned to the Toomre _Q_ stability criterion, embedded in a dark-matter halo, that develops transient spiral arms.
+- **Accretion Disk (SMBH)** — a dominant central black hole surrounded by a collisionless Keplerian test-particle disk (the ballistic limit; no viscous inspiral), with an adaptive timestep to resolve the deep central well and dark matter off by default.
 
 ## Table of Contents
 
@@ -31,7 +36,7 @@ A high-performance, real-time galactic N-body simulation leveraging TypeScript, 
 
 - **Active/Passive Computational Subsetting**: Simulates realistic mass distribution without quadratic overhead by simulating heavy, gravity-exerting "active" stars and lightweight "passive" stars.
 
-- **Symplectic Leapfrog Integration**: Ensures long-term orbital stability and energy conservation, vital for galactic dynamics.
+- **Symplectic Leapfrog Integration**: Ensures long-term orbital stability and energy conservation, vital for N-body dynamics.
 
 <p align="center">
   <img src="public/info.png" alt="Leapfrog Integration Info" width="600">
