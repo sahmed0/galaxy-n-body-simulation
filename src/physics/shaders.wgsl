@@ -153,7 +153,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex : u32, @builtin(instance_index) in
   // Our threshold for Active stars is 1.0 due to Salpeter IMF.
   var sizeMultiplier: f32 = 1.0; 
   if (mass > 1000000.0) {
-      sizeMultiplier = 25.0; // Black hole accretion disk much larger than heavy star (2.0)
+      sizeMultiplier = 5.0; // Black hole accretion disk much larger than heavy star (2.0)
   } else if (mass > 1.0) {
       sizeMultiplier = 2.0; // Make heavy stars larger
   } else {

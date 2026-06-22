@@ -34,7 +34,7 @@ export const GALAXY_RADIUS = 500;
 /**
  * Inner radius of the accretion-preset annulus (see {@link GALAXY_RADIUS}).
  */
-export const DISK_INNER_RADIUS = 50;
+export const DISK_INNER_RADIUS = 10;
 
 /**
  * Mass of the galaxy preset's fixed central black hole (the source mass folded
@@ -42,23 +42,22 @@ export const DISK_INNER_RADIUS = 50;
  * value is unchanged from the old shared central-mass constant. The accretion
  * preset uses its own, far larger {@link ACCRETION_BH_MASS}.
  */
-export const GALAXY_CENTRAL_BH_MASS = 100;
+export const GALAXY_CENTRAL_BH_MASS = 2600;
 
 /**
  * Mass of the accretion preset's central SMBH (the live particle at index 0 and
  * the source of {@link SimulationManager.radialAcc}'s analytic Keplerian field).
  *
  * Over the test-particle annulus R in [DISK_INNER_RADIUS, DISK_INNER_RADIUS +
- * GALAXY_RADIUS] = [50, 550] at gravity = 1, this gives inner circular speed
- * v_c(50) = sqrt(1e5/50) ~ 44 and outer v_c(550) ~ 13 - clearly Keplerian
+ * GALAXY_RADIUS] = [10, 510] at gravity = 1, this gives inner circular speed
+ * v_c(10) = sqrt(1e6/10) ~ 316 and outer v_c(510) ~ 44 - clearly Keplerian
  * (v_c proportional to 1/sqrt(r)), with dramatic inner shear, and dwarfing the
  * total mass of the thousands of Salpeter test particles (0.1-50 each) so they
  * behave as a collisionless disk orbiting a dominant point mass. The adaptive
  * timestep ({@link SimulationManager.computeAdaptiveTimestep}) shrinks dt to keep
- * the fast inner orbits resolved; 1e6 is the next step up if a deeper well is
- * ever wanted.
+ * the fast inner orbits resolved.
  */
-export const ACCRETION_BH_MASS = 1e5;
+export const ACCRETION_BH_MASS = 1.001e6;
 
 /**
  * Default dark-matter halo strength for each preset. The galaxy wants a halo
