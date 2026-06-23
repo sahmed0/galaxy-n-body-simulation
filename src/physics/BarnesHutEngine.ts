@@ -4,6 +4,14 @@
 import { PhysicsState } from './PhysicsState';
 import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
 import { QuadTree } from './QuadTree';
+import {
+    pairwiseAccel,
+    darkMatterAccel,
+    smbhAccel,
+    applyKick,
+    applyDrift,
+    type Accel,
+} from './kernels';
 
 /**
  * Barnes-Hut Physics Engine.
@@ -12,6 +20,14 @@ export class BarnesHutEngine implements PhysicsEngine {
     private state?: PhysicsState;
     public root?: QuadTree;
     private hasLogged: boolean = false;
+
+    // Reused scratch buffers for the per-particle tree walk: the collected sources
+    // (a leaf's bodies + accepted internal nodes' COMs) acting on the current body,
+    // summed through the shared `pairwiseAccel` kernel. Index 0 holds the receiver
+    // itself (mass 0, never summed), so BH and brute force share one force formula.
+    private srcX: number[] = [];
+    private srcY: number[] = [];
+    private srcM: number[] = [];
 
     // No permanent acceleration buffers needed for Leapfrog
     // We calculate acceleration and apply it directly to velocity.
@@ -146,43 +162,35 @@ export class BarnesHutEngine implements PhysicsEngine {
         // 2. Calculate Forces and apply kicks v(t+dt/2) = v(t-dt/2) + a(t) * dt
         const G = params.gravity;
         const theta = params.theta;
-        const softening = params.softening;
+        const softeningSq = params.softening * params.softening;
 
         // Calculate forces for all disk particles (index 0 skipped when it is the
-        // pinned BH marker, which feels no force).
+        // pinned BH marker, which feels no force). The tree walk collects the
+        // sources acting on `i`, then the shared `pairwiseAccel` kernel sums them -
+        // BH and brute force therefore use the identical pairwise force law, so the
+        // only difference under test is the theta tree approximation.
         for (let i = start; i < n; i++) {
-            this.calculateForceAndAddKick(i, this.root, G, theta, softening, dt);
+            const { ax, ay } = this.treeAcceleration(i, G, theta, softeningSq);
+            applyKick(vx, vy, i, ax, ay, dt);
         }
 
-        // 2b. Add Central Forces (Dark Matter Halo + Supermassive Black Hole)
+        // 2b. Add Central Forces (Dark Matter Halo + Supermassive Black Hole), via
+        // the shared central-field kernels (same formulas, dt applied by applyKick).
         const dmStrength = params.dmStrength || 0;
         const smbhMass = params.blackHoleMass || 0;
 
         if (dmStrength > 0 || smbhMass > 0) {
             const dmCoreRadius = params.dmCoreRadius || 50.0;
-            const dmStrengthSq = dmStrength * dmStrength;
-            const dmCoreRadiusSq = dmCoreRadius * dmCoreRadius;
-            const smbhSofteningSq = (params.blackHoleSoftening || params.softening) ** 2;
+            const smbhSoftening = params.blackHoleSoftening || params.softening;
 
             for (let i = start; i < n; i++) {
-                const pix = px[i];
-                const piy = py[i];
-                const rawDistSq = pix * pix + piy * piy;
-
-                // Dark Matter (No square roots as they are slow)
                 if (dmStrength > 0) {
-                    const aDM_base = dmStrengthSq / (rawDistSq + dmCoreRadiusSq);
-                    vx[i] -= pix * aDM_base * dt;
-                    vy[i] -= piy * aDM_base * dt;
+                    const { ax, ay } = darkMatterAccel(px[i], py[i], dmStrength, dmCoreRadius);
+                    applyKick(vx, vy, i, ax, ay, dt);
                 }
-
-                // Supermassive Black Hole
                 if (smbhMass > 0) {
-                    const smbhDistSq = rawDistSq + smbhSofteningSq;
-                    const smbhDist = Math.sqrt(smbhDistSq);
-                    const aSMBH = (G * smbhMass * dt) / (smbhDistSq * smbhDist);
-                    vx[i] -= aSMBH * pix;
-                    vy[i] -= aSMBH * piy;
+                    const { ax, ay } = smbhAccel(px[i], py[i], G, smbhMass, smbhSoftening);
+                    applyKick(vx, vy, i, ax, ay, dt);
                 }
             }
         }
@@ -190,8 +198,7 @@ export class BarnesHutEngine implements PhysicsEngine {
         // 3. Update Positions x(t+dt) = x(t) + v(t+dt/2) * dt
         // Index 0 (the pinned BH marker) is left at the origin.
         for (let i = start; i < n; i++) {
-            px[i] += vx[i] * dt;
-            py[i] += vy[i] * dt;
+            applyDrift(px, py, vx, vy, i, dt);
         }
 
         if (!this.hasLogged) {
@@ -200,54 +207,72 @@ export class BarnesHutEngine implements PhysicsEngine {
         }
     }
 
-    private calculateForceAndAddKick(i: number, node: QuadTree, G: number, theta: number, softening: number, dt: number): void {
+    /**
+     * Tree-walk acceleration on body `i`: collects every source acting on it (each
+     * body in a leaf, or an accepted internal node's COM pseudo-body) into the reused
+     * scratch buffers, then returns the Newtonian sum via the shared `pairwiseAccel`
+     * kernel. Returns acceleration only (no dt); the integrator applies dt.
+     */
+    private treeAcceleration(i: number, G: number, theta: number, softeningSq: number): Accel {
+        const sx = this.srcX, sy = this.srcY, sm = this.srcM;
+        sx.length = 0;
+        sy.length = 0;
+        sm.length = 0;
+        // Index 0 is the receiver itself (mass 0, never summed - pairwiseAccel skips j===i).
+        sx.push(this.state!.positionX[i]);
+        sy.push(this.state!.positionY[i]);
+        sm.push(0);
+
+        this.collectSources(i, this.root!, theta, softeningSq);
+
+        return pairwiseAccel(sx, sy, sm, sx.length, 0, G, softeningSq);
+    }
+
+    /**
+     * Recursively walks the tree, pushing the sources that act on body `i` into the
+     * scratch buffers: a leaf contributes each of its bodies (excluding `i`); an
+     * internal node contributes its COM as a single pseudo-body when the theta
+     * criterion `width / dist < theta` holds (softened distance), else recurses.
+     */
+    private collectSources(i: number, node: QuadTree, theta: number, softeningSq: number): void {
         // If node is empty (totalMass == 0), skip
         if (node.totalMass === 0) return;
 
         const px = this.state!.positionX[i];
         const py = this.state!.positionY[i];
 
-        // 1. If it's a leaf node, calculate force from all bodies inside it
+        // 1. Leaf node: every body inside it is an exact source.
         if (!node.divided) {
             const points = node.points;
             const len = points.length;
             for (let k = 0; k < len; k++) {
                 const j = points[k];
                 if (i === j) continue;
-
-                const dx = this.state!.positionX[j] - px;
-                const dy = this.state!.positionY[j] - py;
-                const distSq = dx * dx + dy * dy + softening * softening;
-                const dist = Math.sqrt(distSq);
-
-                const a = (G * this.state!.mass[j] * dt) / (distSq * dist);
-                this.state!.velocityX[i] += a * dx;
-                this.state!.velocityY[i] += a * dy;
+                this.srcX.push(this.state!.positionX[j]);
+                this.srcY.push(this.state!.positionY[j]);
+                this.srcM.push(this.state!.mass[j]);
             }
             return;
         }
 
-        // 2. Internal Node - Apply Theta Criterion
+        // 2. Internal Node - Apply Theta Criterion (softened distance, unchanged).
         const dx = node.centerOfMassX - px;
         const dy = node.centerOfMassY - py;
-        const distSq = dx * dx + dy * dy + softening * softening;
+        const distSq = dx * dx + dy * dy + softeningSq;
         const dist = Math.sqrt(distSq);
 
-        // s = width of region
-        const s = node.boundary.width;
-
-        // theta criterion: s / d < theta
-        if (s / dist < theta) {
-            // Treat as single body
-            const a = (G * node.totalMass * dt) / (distSq * dist);
-            this.state!.velocityX[i] += a * dx;
-            this.state!.velocityY[i] += a * dy;
+        // s = width of region; theta criterion: s / d < theta
+        if (node.boundary.width / dist < theta) {
+            // Treat as single body at the node's centre of mass.
+            this.srcX.push(node.centerOfMassX);
+            this.srcY.push(node.centerOfMassY);
+            this.srcM.push(node.totalMass);
         } else {
             // Recurse
-            if (node.northwest) this.calculateForceAndAddKick(i, node.northwest, G, theta, softening, dt);
-            if (node.northeast) this.calculateForceAndAddKick(i, node.northeast, G, theta, softening, dt);
-            if (node.southwest) this.calculateForceAndAddKick(i, node.southwest, G, theta, softening, dt);
-            if (node.southeast) this.calculateForceAndAddKick(i, node.southeast, G, theta, softening, dt);
+            if (node.northwest) this.collectSources(i, node.northwest, theta, softeningSq);
+            if (node.northeast) this.collectSources(i, node.northeast, theta, softeningSq);
+            if (node.southwest) this.collectSources(i, node.southwest, theta, softeningSq);
+            if (node.southeast) this.collectSources(i, node.southeast, theta, softeningSq);
         }
     }
 }

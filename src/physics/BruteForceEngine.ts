@@ -3,6 +3,7 @@
  */
 import { PhysicsState } from './PhysicsState';
 import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import { pairwiseAccel, darkMatterAccel, smbhAccel, applyKick, applyDrift } from './kernels';
 
 /**
  * Handles the physics simulation for the N-body system.
@@ -82,8 +83,7 @@ export class BruteForceEngine implements PhysicsEngine {
         // its pinned, inert marker: never integrate it so it stays at the origin.
         const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
         for (let i = start; i < n; i++) {
-            px[i] += vx[i] * dt;
-            py[i] += vy[i] * dt;
+            applyDrift(px, py, vx, vy, i, dt);
         }
     }
 
@@ -111,24 +111,21 @@ export class BruteForceEngine implements PhysicsEngine {
         // Start every pairwise/central loop at `start` so index 0 is left untouched.
         const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
 
-        // 1. Heavy <-> Heavy interactions (Newton's 3rd Law Optimisation: i < j)
-        for (let i = start; i < activeCount; i++) {
-            for (let j = i + 1; j < activeCount; j++) {
-                const dx = px[j] - px[i];
-                const dy = py[j] - py[i];
-                const distSq = dx * dx + dy * dy + softeningSq;
-                const dist = Math.sqrt(distSq);
-                const aBase = G / (distSq * dist);
-
-                // Acceleration on i due to j
-                const ai = aBase * mass[j] * dt;
-                vx[i] += ai * dx;
-                vy[i] += ai * dy;
-
-                // Acceleration on j due to i (Newton's 3rd Law: opposite force)
-                const aj = aBase * mass[i] * dt;
-                vx[j] -= aj * dx;
-                vy[j] -= aj * dy;
+        // 1. Heavy <-> Heavy interactions, via the shared pairwise-accel kernel.
+        // Each heavy body gets the full Newtonian sum over the other heavies; the
+        // kernel returns acceleration (no dt/mass[i]) and the integrator applies dt.
+        // Views over [start, activeCount) exclude the pinned BH (index 0) as both a
+        // source and a receiver and cap the sum at the active set, matching the old
+        // loop bounds. (Drops the i<j symmetric optimisation in exchange for a single
+        // force law shared with Barnes-Hut.)
+        const hn = activeCount - start;
+        if (hn > 1) {
+            const hx = px.subarray(start, activeCount);
+            const hy = py.subarray(start, activeCount);
+            const hm = mass.subarray(start, activeCount);
+            for (let k = 0; k < hn; k++) {
+                const { ax, ay } = pairwiseAccel(hx, hy, hm, hn, k, G, softeningSq);
+                applyKick(vx, vy, k + start, ax, ay, dt);
             }
         }
 
@@ -157,37 +154,20 @@ export class BruteForceEngine implements PhysicsEngine {
         const dmStrength = params.dmStrength || 0;
         if (dmStrength > 0) {
             const dmCoreRadius = params.dmCoreRadius || 50.0;
-            const dmStrengthSq = dmStrength * dmStrength;
-            const dmCoreRadiusSq = dmCoreRadius * dmCoreRadius;
-
             for (let i = start; i < n; i++) {
-                const pix = px[i];
-                const piy = py[i];
-                const distSq = pix * pix + piy * piy;
-
-                // Mathematical optimisation: `dist` natively cancels out
-                // resulting in purely squared variables and zero square roots.
-                const aDM_base = dmStrengthSq / (distSq + dmCoreRadiusSq);
-                vx[i] -= pix * aDM_base * dt;
-                vy[i] -= piy * aDM_base * dt;
+                const { ax, ay } = darkMatterAccel(px[i], py[i], dmStrength, dmCoreRadius);
+                applyKick(vx, vy, i, ax, ay, dt);
             }
         }
 
         // 4. Supermassive Black Hole (SMBH) Central Force
         const smbhMass = params.blackHoleMass || 0;
         if (smbhMass > 0) {
-            const smbhSofteningSq = (params.blackHoleSoftening || params.softening) ** 2;
+            const smbhSoftening = params.blackHoleSoftening || params.softening;
             // Index 0 is the BH itself (pinned at origin); skip it via `start`.
             for (let i = start; i < n; i++) {
-                const pix = px[i];
-                const piy = py[i];
-                const distSq = pix * pix + piy * piy + smbhSofteningSq;
-                const dist = Math.sqrt(distSq);
-
-                // Force perfectly directed towards the central mass at (0,0)
-                const aSMBH = (G * smbhMass * dt) / (distSq * dist);
-                vx[i] -= aSMBH * pix;
-                vy[i] -= aSMBH * piy;
+                const { ax, ay } = smbhAccel(px[i], py[i], G, smbhMass, smbhSoftening);
+                applyKick(vx, vy, i, ax, ay, dt);
             }
         }
     }

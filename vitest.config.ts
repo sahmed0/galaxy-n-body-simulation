@@ -8,6 +8,6 @@ export default defineConfig({
         // happy-dom gives us `document`/`window` so we can exercise the engine
         // fallback bookkeeping and the UI banner/notification code paths.
         environment: 'happy-dom',
-        include: ['src/**/*.{test,spec}.ts'],
+        include: ['src/**/*.{test,spec}.ts', 'tests/**/*.test.ts'],
     },
 });
