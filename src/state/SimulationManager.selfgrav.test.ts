@@ -273,24 +273,24 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
 
 describe('SimulationManager - self-gravitating active/passive split', () => {
     /** Builds a galaxy sim with the active/passive split engaged. */
-    function makeSplitSim(count = 4000, nActive = 1000) {
+    function makeSplitSim(count = 1000, nActive = 500) {
         const sim = makeSim('galaxy', count);
         sim.params.selfGravActiveCount = nActive;
         return sim;
     }
 
     it('marks the BH plus the first selfGravActiveCount disk particles active', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
-        // Source range [1, activeCount) = 1000 disk sources, so activeCount = 1001
+        // Source range [1, activeCount) = 500 disk sources, so activeCount = 501
         // (the BH at index 0 occupies the leading slot, mirroring the accretion preset).
-        expect(sim.params.activeCount).toBe(1001);
+        expect(sim.params.activeCount).toBe(501);
         // Sanity: the split must actually be engaged (not clamped to count).
         expect(sim.params.activeCount).toBeLessThan(sim.params.count);
     });
 
     it('puts the full calibrated disk mass on the active set (passive tracers share the render mass)', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
 
         // Every disk particle [1, count) carries the same per-active-particle mass =
@@ -308,7 +308,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
     });
 
     it('still calibrates f_disk at 2.2 R_d from the active-set field', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
         const fDisk = sim.diskFractionAt(2.2 * DISK_SCALE_LENGTH);
         expect(Math.abs(fDisk - TARGET_F_DISK)).toBeLessThan(0.05);
@@ -322,7 +322,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
     });
 
     it('keeps the passive tracer cloud bound when stepped', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
         const r0 = maxRadius(sim);
         const rms0 = rmsRadius(sim);

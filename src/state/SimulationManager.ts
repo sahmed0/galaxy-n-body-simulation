@@ -250,6 +250,13 @@ export class SimulationManager {
     private rotCurveRMax = 0;
 
     /**
+     * Source of randomness for all initial-condition sampling (Salpeter masses,
+     * disk positions/velocities). Defaults to Math.random so production behaviour
+     * is unchanged; tests inject a seeded mulberry32 for deterministic draws.
+     */
+    private rng: () => number = Math.random;
+
+    /**
      * Azimuthally-averaged surface-density profile (Sigma vs radius) of the
      * self-gravitating disk, measured from the *realized* particle distribution
      * (see {@link SimulationManager.buildSurfaceDensity}). Bin k is centred at
@@ -484,8 +491,8 @@ export class SimulationManager {
         const particles: { x: number; y: number; mass: number; r: number; g: number; b: number; dist: number }[] = [];
 
         for (let i = 1; i < this.params.count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = DISK_INNER_RADIUS + Math.random() * GALAXY_RADIUS;
+            const angle = this.rng() * Math.PI * 2;
+            const dist = DISK_INNER_RADIUS + this.rng() * GALAXY_RADIUS;
             const x = Math.cos(angle) * dist;
             const y = Math.sin(angle) * dist;
 
@@ -587,7 +594,7 @@ export class SimulationManager {
 
         const radii = new Float64Array(n);
         for (let i = start; i < n; i++) {
-            const angle = Math.random() * Math.PI * 2;
+            const angle = this.rng() * Math.PI * 2;
             // Sample R from the exponential-disk *radial* distribution
             // dN/dR = 2*pi*R*Sigma(R) ∝ R*exp(-R/Rd): a Gamma(k=2, scale=Rd)
             // deviate (the sum of two exponentials), truncated at Rmax by rejection.
@@ -596,7 +603,7 @@ export class SimulationManager {
             // intended exponential disk.
             let R: number;
             do {
-                R = -Rd * (Math.log(1 - Math.random()) + Math.log(1 - Math.random()));
+                R = -Rd * (Math.log(1 - this.rng()) + Math.log(1 - this.rng()));
             } while (R > Rmax);
             radii[i] = R;
 
@@ -705,7 +712,7 @@ export class SimulationManager {
         const mMin = 0.1;
         const mMax = 50.0;
         const p = 1.35;
-        const u = Math.random();
+        const u = this.rng();
         const minP = Math.pow(mMin, -p);
         const maxP = Math.pow(mMax, -p);
         return Math.pow(u * (maxP - minP) + minP, -1 / p);
@@ -1343,7 +1350,7 @@ export class SimulationManager {
             // --- Accretion (central-mass-dominated): near-circular with mild scatter ---
             const aTot = this.radialAcc(r);
             const vCirc = Math.sqrt(Math.max(aTot * r, 0));
-            const velocity = vCirc * (0.9 + Math.random() * 0.2);
+            const velocity = vCirc * (0.9 + this.rng() * 0.2);
             vx = tx * velocity;
             vy = ty * velocity;
 
@@ -1364,8 +1371,8 @@ export class SimulationManager {
     private gaussianRandom(): number {
         let u = 0;
         let v = 0;
-        while (u === 0) u = Math.random();
-        while (v === 0) v = Math.random();
+        while (u === 0) u = this.rng();
+        while (v === 0) v = this.rng();
         return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
