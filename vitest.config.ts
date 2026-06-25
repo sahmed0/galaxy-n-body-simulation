@@ -13,5 +13,12 @@ export default defineConfig({
         // slower under v8 coverage instrumentation in CI, so give them headroom
         // beyond Vitest's 5s default to avoid spurious timeouts.
         testTimeout: 30000,
+        // Run tests in forked child processes rather than the default worker
+        // threads. With the happy-dom environment, a leftover worker thread can
+        // keep the test process's stdout pipe open on the GitHub Actions runner,
+        // so the job hangs indefinitely after the suite has already passed.
+        // Forked children are cleanly terminated by the pool, letting the runner
+        // finalise the job as soon as the tests finish.
+        pool: 'forks',
     },
 });

@@ -2,11 +2,20 @@ name: Test
 
 on:
   push:
+    branches: ["main", "feat"]
   pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Guardrail: the suite finishes in well under a minute, so cap the job to
+    # keep a stray hang from holding a runner (and a deploy) for hours.
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
