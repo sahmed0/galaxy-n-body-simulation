@@ -27,8 +27,3 @@ jobs:
 
       - name: Run tests
         run: pnpm test
-
-      - name: Coverage report
-        run: |
-          pnpm add -D @vitest/coverage-v8
-          pnpm exec vitest run --coverage
