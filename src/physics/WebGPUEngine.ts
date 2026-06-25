@@ -17,6 +17,51 @@ export class WebGPUUnavailableError extends Error {
     }
 }
 
+/** One labeled entry of the `Params` uniform block: a field name paired with its value. */
+export interface UniformField {
+    name: string;
+    value: number;
+}
+
+/**
+ * Single source of truth for the uniform write order. Each entry pairs a field name with its
+ * value; {@link WebGPUEngine.updateUniforms} maps this to the flat `Float32Array` it uploads.
+ * The order - and the `vecN` component names (`cameraPos.x`/`.y`, `canvasSize.x`/`.y`) - must
+ * mirror the `Params` struct in `shaders.wgsl`. `tests/gpu/uniform-layout.test.ts` parses that
+ * struct, computes WGSL byte offsets, and fails if this table ever drifts from the shader.
+ */
+export function buildUniformFields(
+    params: PhysicsParams,
+    dt: number,
+    count: number,
+    activeCount: number,
+    canvasWidth: number,
+    canvasHeight: number,
+): UniformField[] {
+    return [
+        { name: 'gravity', value: params.gravity },
+        { name: 'dt', value: dt },
+        { name: 'softening', value: params.softening },
+        { name: 'count', value: count },
+        { name: 'activeCount', value: activeCount },
+        { name: 'useActivePassive', value: params.useActivePassive ? 1.0 : 0.0 },
+        { name: 'theta', value: params.theta || 1.0 },
+        { name: 'dmStrength', value: params.dmStrength || 0.0 },
+        { name: 'cameraPos.x', value: params.cameraX || 0 },
+        { name: 'cameraPos.y', value: params.cameraY || 0 },
+        { name: 'cameraZoom', value: params.cameraZoom || 1 },
+        { name: 'cameraTilt', value: params.cameraTilt || 0.6 },
+        { name: 'canvasSize.x', value: canvasWidth },
+        { name: 'canvasSize.y', value: canvasHeight },
+        { name: 'dmCoreRadius', value: params.dmCoreRadius || 50.0 },
+        { name: 'blackHoleMass', value: params.blackHoleMass || 0.0 },
+        { name: 'blackHoleSoftening', value: params.blackHoleSoftening || params.softening },
+        { name: 'pad1', value: 0.0 },
+        { name: 'pad2', value: 0.0 },
+        { name: 'pad3', value: 0.0 },
+    ];
+}
+
 /**
  * A highly optimised physics engine relying on WebGPU Compute Shaders.
  * Calculates N-Body gravity off the main thread and pipes directly into the render queue.
@@ -337,8 +382,6 @@ export class WebGPUEngine implements PhysicsEngine {
     updateUniforms(dt: number, params: PhysicsParams) {
         if (!this.device || !this.context) return;
 
-        const useActivePassiveVal = params.useActivePassive ? 1.0 : 0.0;
-
         // Resize WebGPU Canvas if needed
         if (this.canvas.width !== window.innerWidth || this.canvas.height !== window.innerHeight) {
             this.canvas.width = window.innerWidth;
@@ -351,28 +394,10 @@ export class WebGPUEngine implements PhysicsEngine {
             });
         }
 
-        const uniformData = new Float32Array([
-            params.gravity,
-            dt,
-            params.softening,
-            this.count,
-            this.activeCount,
-            useActivePassiveVal,
-            params.theta || 1.0,
-            params.dmStrength || 0.0,
-            params.cameraX || 0,
-            params.cameraY || 0,
-            params.cameraZoom || 1,
-            params.cameraTilt || 0.6,
-            this.canvas.width,
-            this.canvas.height,
-            params.dmCoreRadius || 50.0,
-            params.blackHoleMass || 0.0,
-            params.blackHoleSoftening || params.softening,
-            0.0, // pad1
-            0.0, // pad2
-            0.0  // pad3
-        ]);
+        const uniformData = new Float32Array(
+            buildUniformFields(params, dt, this.count, this.activeCount,
+                this.canvas.width, this.canvas.height).map(f => f.value)
+        );
         this.device.queue.writeBuffer(this.bufferParams!, 0, uniformData);
     }
 

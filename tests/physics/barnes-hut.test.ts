@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  *
- * Barnes-Hut accuracy test. Phase 5 routes the BH engine's exact (leaf) interactions
+ * Barnes-Hut accuracy test. Routes the BH engine's exact (leaf) interactions
  * and its theta-accepted internal-node interactions through the *same* `pairwiseAccel`
  * kernel that brute force uses, so the only thing a BH-vs-brute comparison can expose
  * is the theta tree approximation - never two different force formulas.
@@ -13,11 +13,7 @@
  * and the position drift afterwards does not touch velocity). So this exercises the
  * production code path, confirming the engine genuinely uses the shared kernel.
  *
- * Error metric (see PROGRESS Phase 05 for the full rationale): the spec proposes a "max
- * relative error" envelope, but a strict per-particle max `|Δa|/|a|` is dominated by
- * force-balance particles where the net |a| nearly cancels - there an arbitrarily small
- * absolute tree error blows the *ratio* up, independent of tree quality. So for the
- * envelope/monotonicity we use the standard treecode accuracy metric, the global RMS
+ * Error metric: Global RMS
  * relative force error `sqrt(Σ|Δa|² / Σ|a|²)`, which weights by force magnitude and is
  * robust to those outliers. The per-particle max is kept only for the theta = 0 exactness
  * check, where every node is rejected so BH == brute and the ratio is well-conditioned.
@@ -31,7 +27,7 @@ import { BarnesHutEngine, PhysicsState } from '../../src/physics';
 import type { PhysicsParams } from '../../src/physics/types';
 import { pairwiseAccel } from '../../src/physics/kernels';
 
-/** Deterministic mulberry32 PRNG — keeps the cloud reproducible without the Phase 7 rng util. */
+/** Deterministic mulberry32 PRNG — keeps the cloud reproducible without the rng util. */
 function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
@@ -153,8 +149,7 @@ describe('Barnes-Hut vs brute force — shared pairwise kernel + theta error env
 
     it('keeps the RMS relative force error within its per-theta envelope', () => {
         // Measured RMS at SEED=0x5eed, N=256, ε=0.5:
-        //   theta=0.2 ≈ 1.3e-4, theta=0.5 ≈ 4.3e-3, theta=1.0 ≈ 3.5e-2 — all comfortably
-        //   under the spec envelope, which leaves margin against seed/refactor float noise.
+        //   theta=0.2 ≈ 1.3e-4, theta=0.5 ≈ 4.3e-3, theta=1.0 ≈ 3.5e-2 — all leave margin against seed/refactor float noise.
         expect(err.get(0.2)!.rms).toBeLessThan(0.005);
         expect(err.get(0.5)!.rms).toBeLessThan(0.03);
         expect(err.get(1.0)!.rms).toBeLessThan(0.1);

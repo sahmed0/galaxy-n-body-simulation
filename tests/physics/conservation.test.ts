@@ -17,7 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeSoA, leapfrogStep, type Body, type SoAState } from '../utils/soa';
 
-/** Deterministic mulberry32 PRNG — keeps the cloud reproducible without the Phase 7 rng util. */
+/** Deterministic mulberry32 PRNG — keeps the cloud reproducible without the rng util. */
 function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
@@ -100,7 +100,7 @@ describe('Full brute-force run — linear momentum & COM conservation', () => {
             if (rel > maxRel) maxRel = rel;
         }
 
-        // Measured 1.3e-15 (float64 roundoff floor); 1e-9 is the spec target with headroom.
+        // Measured 1.3e-15 (float64 roundoff floor).
         expect(maxRel).toBeLessThan(1e-9);
     });
 

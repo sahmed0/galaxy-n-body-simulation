@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  *
- * Phase 7 — Injectable seeded RNG + Salpeter KS test.
+ * Injectable seeded RNG + Salpeter KS test.
  *
  * Verifies that {@link SimulationManager.sampleSalpeterMass} draws stellar masses
  * from the Salpeter IMF over [0.1, 50] (exponent p = 1.35). With a seeded RNG

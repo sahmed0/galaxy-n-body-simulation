@@ -11,8 +11,6 @@
  * SimulationManager.params.blackHoleMass} stays 0) and no measured rotation curve.
  * initGalaxy()/BruteForceEngine touch no DOM or GPU, so they are driven directly.
  *
- * This file is the home for all accretion-preset tests; further phases add the
- * adaptive-timestep and high-central-mass (Keplerian/stability/glow) checks here.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {

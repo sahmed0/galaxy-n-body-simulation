@@ -3,9 +3,7 @@
  *
  * Deterministic seeded PRNG shared across the test suite. Mulberry32 — a small,
  * fast, well-distributed 32-bit generator — gives reproducible draws so that
- * statistical tests (e.g. the Salpeter KS test) are non-flaky in CI. The exact
- * implementation was inlined in earlier phases' tests (quadtree, barnes-hut);
- * this is the shared extraction those phases deferred to Phase 7.
+ * statistical tests (e.g. the Salpeter KS test) are non-flaky in CI.
  */
 export function mulberry32(seed: number): () => number {
     let a = seed >>> 0;

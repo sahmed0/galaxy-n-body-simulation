@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  *
- * QuadTree centre-of-mass invariants (Phase 6). Barnes-Hut accuracy rests entirely on
+ * QuadTree centre-of-mass invariants. Barnes-Hut accuracy rests entirely on
  * each node carrying the correct aggregate mass + mass-weighted centre of mass, so this
  * tests `calculateMassDistribution` directly through the public API — no engine, no theta,
  * no force law. Three structural invariants:
@@ -23,7 +23,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { QuadTree, type Boundary } from '../../src/physics/QuadTree';
 import { PhysicsState } from '../../src/physics/PhysicsState';
 
-/** Deterministic mulberry32 PRNG — reproducible cloud without the Phase 7 rng util. */
+/** Deterministic mulberry32 PRNG — reproducible cloud without the rng util. */
 function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
