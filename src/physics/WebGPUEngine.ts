@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SelfRenderingEngine, PhysicsParams, InitialConditionType } from './types';
 import shaderWGSL from './shaders.wgsl?raw'; // Vite import for raw string
 
 /**
@@ -66,7 +66,8 @@ export function buildUniformFields(
  * A highly optimised physics engine relying on WebGPU Compute Shaders.
  * Calculates N-Body gravity off the main thread and pipes directly into the render queue.
  */
-export class WebGPUEngine implements PhysicsEngine {
+export class WebGPUEngine implements SelfRenderingEngine {
+    readonly kind = 'self-rendering' as const;
     private canvas: HTMLCanvasElement;
     private device: GPUDevice | null = null;
     private context: GPUCanvasContext | null = null;
@@ -482,17 +483,6 @@ export class WebGPUEngine implements PhysicsEngine {
     }
 
     /**
-     * Convenience wrapper: advance one step and render. Retained for callers that
-     * do not perform their own fixed-timestep sub-stepping.
-     * @param dt - Delta time multiplier.
-     * @param params - Configuration parameter blocks evaluating runtime features.
-     */
-    update(dt: number, params: PhysicsParams) {
-        this.step(dt, params);
-        this.render(params);
-    }
-
-    /**
      * Extracts telemetry tracking GPU hardware processing times per compute pass.
      * @returns Duration in milliseconds simulating the last iteration sequence.
      */
@@ -508,22 +498,6 @@ export class WebGPUEngine implements PhysicsEngine {
         if (!this.bufferParticlesA || !this.bufferProps) return 0;
         const totalBytes = this.bufferParticlesA.size * 2 + this.bufferProps.size;
         return totalBytes / (1024 * 1024);
-    }
-
-    /**
-     * An anti-pattern interface override returning zero (GPU coordinates remain on-device).
-     * @returns Fake empty array for interface compatibility. 
-     */
-    getPositions(): Float32Array {
-        return new Float32Array(0);
-    }
-
-    /**
-     * An anti-pattern interface override returning zero (GPU coordinates remain on-device).
-     * @returns Fake empty array for interface compatibility.
-     */
-    getVelocities(): Float32Array {
-        return new Float32Array(0);
     }
 
     /**
