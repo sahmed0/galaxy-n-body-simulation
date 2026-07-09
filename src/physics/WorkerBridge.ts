@@ -1,4 +1,4 @@
-import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SharedStateEngine, PhysicsParams, InitialConditionType } from './types';
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
@@ -9,10 +9,11 @@ import { PhysicsState } from './PhysicsState';
  * Acts as an interfacial broker connecting a running Web Worker physics loop
  * asynchronously to the main application render cycle via SharedArrayBuffer.
  */
-export class WorkerBridge implements PhysicsEngine {
+export class WorkerBridge implements SharedStateEngine {
+    public readonly kind = 'shared-state' as const;
     private worker: Worker;
     private memory: PhysicsMemory;
-    private state: PhysicsState;
+    public readonly state: PhysicsState;
     private pingInterval: ReturnType<typeof setInterval> | null = null;
     private lastPingTime = 0;
     private lastLatencyMs = 0;
@@ -108,7 +109,7 @@ export class WorkerBridge implements PhysicsEngine {
      * @param dt - Loop frequency evaluation parameter.
      * @param params - Variables mapped dynamically and monitored locally inside workers using standard float arrays.
      */
-    public update(dt: number, params: PhysicsParams): void {
+    public step(dt: number, params: PhysicsParams): void {
         const status = Atomics.load(this.memory.flags, PhysicsMemory.FLAG_STATUS);
 
         if (status === PhysicsMemory.STATUS_IDLE) {
@@ -127,29 +128,5 @@ export class WorkerBridge implements PhysicsEngine {
             Atomics.store(this.memory.flags, PhysicsMemory.FLAG_STATUS, PhysicsMemory.STATUS_COMPUTING);
             Atomics.notify(this.memory.flags, PhysicsMemory.FLAG_STATUS);
         }
-    }
-
-    /**
-     * Inspects active synchronized internal tracking components evaluating local horizontal distances.
-     * @returns A float collection reflecting element coordinates continuously updated by the separate worker thread.
-     */
-    public getPositions(): Float32Array {
-        return this.state.positionX;
-    }
-
-    /**
-     * Queries internal variables exposing mathematical drift calculated over recent worker iterations.
-     * @returns A float collection reflecting positional inertia continuously updated by the separate worker thread.
-     */
-    public getVelocities(): Float32Array {
-        return this.state.velocityX;
-    }
-
-    /**
-     * Returns the full proxy wrapper holding continuous array structures bound via SharedArrayBuffer.
-     * @returns Local PhysicsState view tracking continuous worker states lock-free.
-     */
-    public getState(): PhysicsState {
-        return this.state;
     }
 }

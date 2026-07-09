@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { PhysicsState } from './PhysicsState';
-import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SharedStateEngine, PhysicsParams, InitialConditionType } from './types';
 import { QuadTree } from './QuadTree';
 import {
     pairwiseAccel,
@@ -16,8 +16,9 @@ import {
 /**
  * Barnes-Hut Physics Engine.
  */
-export class BarnesHutEngine implements PhysicsEngine {
-    private state?: PhysicsState;
+export class BarnesHutEngine implements SharedStateEngine {
+    public readonly kind = 'shared-state' as const;
+    public state!: PhysicsState;
     public root?: QuadTree;
     private hasLogged: boolean = false;
 
@@ -55,31 +56,14 @@ export class BarnesHutEngine implements PhysicsEngine {
     }
 
     /**
-     * Retrieves the X-axis positions of all tracked bodies.
-     * @returns A Float32Array containing body positions along the X-axis.
-     */
-    public getPositions(): Float32Array {
-        return this.state ? this.state.positionX : new Float32Array(0);
-    }
-
-    /**
-     * Retrieves the X-axis velocities of all tracked bodies.
-     * @returns A Float32Array containing body velocities along the X-axis.
-     */
-    public getVelocities(): Float32Array {
-        return this.state ? this.state.velocityX : new Float32Array(0);
-    }
-
-    /**
      * Releases the pooled QuadTree back to its node pool so it can be reused by a
-     * subsequent engine, then drops the state reference. Idempotent.
+     * subsequent engine.
      */
     public dispose(): void {
         if (this.root) {
             this.root.free();
             this.root = undefined;
         }
-        this.state = undefined;
     }
 
     /**
@@ -87,7 +71,7 @@ export class BarnesHutEngine implements PhysicsEngine {
      * @param dt - The time step delta to apply to velocities and positions.
      * @param params - A configuration object defining system forces such as gravity and softening.
      */
-    public update(dt: number, params: PhysicsParams): void {
+    public step(dt: number, params: PhysicsParams): void {
         if (!this.state) return;
 
         const n = this.state.n;

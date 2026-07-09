@@ -246,7 +246,7 @@ export function updateTelemetry(fps: number, sim: SimulationManager) {
 
     const gpuRows = document.querySelectorAll('.gpu-row');
 
-    if (sim.activeEngineStr === 'gpu' && sim.webGpuEngine) {
+    if (sim.webGpuEngine && sim.engine === sim.webGpuEngine) {
         gpuRows.forEach((el) => (el as HTMLElement).style.display = 'flex');
 
         if (gpuDispatchEl) gpuDispatchEl.innerText = sim.webGpuEngine.getLastDispatchTime().toFixed(2) + ' ms';

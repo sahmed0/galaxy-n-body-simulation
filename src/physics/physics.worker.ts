@@ -75,7 +75,7 @@ function loop() {
             };
 
             // Run Physics
-            engine.update(params.dt, params);
+            engine.step(params.dt, params);
 
             // Unblock the main thread sequence cleanly by restoring the flag, 
             // alerting presentation logic that new array values safely exist.

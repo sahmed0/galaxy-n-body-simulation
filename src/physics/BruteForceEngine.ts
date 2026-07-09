@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { PhysicsState } from './PhysicsState';
-import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SharedStateEngine, PhysicsParams, InitialConditionType } from './types';
 import { pairwiseAccel, darkMatterAccel, smbhAccel, applyKick, applyDrift } from './kernels';
 
 /**
@@ -13,8 +13,9 @@ import { pairwiseAccel, darkMatterAccel, smbhAccel, applyKick, applyDrift } from
  * energy-stable. The half-step offset assumes a fixed dt; if dt changes at
  * runtime the velocities must be re-staggered (see SimulationManager.softResetVelocities).
  */
-export class BruteForceEngine implements PhysicsEngine {
-    private state!: PhysicsState;
+export class BruteForceEngine implements SharedStateEngine {
+    public readonly kind = 'shared-state' as const;
+    public state!: PhysicsState;
 
     /**
      * Constructs the BruteForceEngine and immediately evaluates the provided state.
@@ -31,22 +32,6 @@ export class BruteForceEngine implements PhysicsEngine {
      */
     public init(_n: number, initialConditions: InitialConditionType): void {
         this.state = initialConditions;
-    }
-
-    /**
-     * Inspects the stored horizontal positions within the active internal state.
-     * @returns The raw Float32Array mapped to X-coordinate memory space.
-     */
-    public getPositions(): Float32Array {
-        return this.state.positionX; // Note: This only returns X. The interface is slightly ambiguous for SoA.
-    }
-
-    /**
-     * Inspects the horizontal velocities actively iterating over time inside the engine.
-     * @returns The associated Float32Array measuring the X-axis velocity data for all managed elements.
-     */
-    public getVelocities(): Float32Array {
-        return this.state.velocityX;
     }
 
     /**
@@ -68,7 +53,7 @@ export class BruteForceEngine implements PhysicsEngine {
      * @param dt - The time step representing duration elapsed for numeric iteration logic.
      * @param params - Configuration parameter blocks evaluating spatial phenomena like Dark Matter.
      */
-    public update(dt: number, params: PhysicsParams): void {
+    public step(dt: number, params: PhysicsParams): void {
         // 1. Calculate a(t) and apply to v immediately
         this.calculateForcesAndAddKicks(dt, params);
 

@@ -10,7 +10,7 @@ import {
     BarnesHutEngine,
     WorkerBridge,
 } from '../physics';
-import type { PhysicsEngine } from '../physics';
+import type { AnyEngine } from '../physics';
 import { CanvasRenderer } from '../rendering';
 import { massToColor } from '../utils';
 
@@ -199,9 +199,8 @@ export const SELF_GRAV_BH_SOFTENING = 25;
 export class SimulationManager {
     memory!: PhysicsMemory;
     state!: PhysicsState;
-    engine!: PhysicsEngine;
+    engine!: AnyEngine;
     webGpuEngine: WebGPUEngine | null = null;
-    activeEngineStr: 'cpu' | 'gpu' = 'cpu';
     workerBridge: WorkerBridge | null = null;
     renderer!: CanvasRenderer;
 
@@ -332,7 +331,6 @@ export class SimulationManager {
                 this.webGpuEngine = new WebGPUEngine();
                 await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
                 this.registerWebGpuLossHandler();
-                this.activeEngineStr = 'gpu';
                 this.engine = this.webGpuEngine;
                 this.webGpuEngine.setVisible(true);
                 this.renderer.canvas.style.display = 'none';
@@ -838,7 +836,7 @@ export class SimulationManager {
             this.computeStarVelocity(i, dist);
         }
 
-        if (this.activeEngineStr === 'gpu' && this.webGpuEngine) {
+        if (this.webGpuEngine && this.engine === this.webGpuEngine) {
             this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
             this.webGpuEngine.updateUniforms(this.params.dt, this.params);
         }
@@ -1415,8 +1413,6 @@ export class SimulationManager {
             this.renderer.canvas.style.display = 'block';
         }
 
-        this.activeEngineStr = 'cpu';
-
         if (type === 'brute') {
             this.engine = new BruteForceEngine(this.state);
         } else if (type === 'barnes') {
@@ -1448,7 +1444,6 @@ export class SimulationManager {
                 return;
             }
 
-            this.activeEngineStr = 'gpu';
             this.webGpuEngine.setVisible(true);
 
             if (this.renderer && this.renderer.canvas) {
@@ -1533,18 +1528,8 @@ export class SimulationManager {
             bgCanvas.style.transform = `translate(${bgX}px, ${bgY}px) scale(${bgScale})`;
         }
 
-        const isGpu = this.activeEngineStr === 'gpu' && !!this.webGpuEngine;
-
         this.renderer.massThreshold = this.params.massThreshold;
         this.renderer.showQuadTree = this.params.shouldShowQuadTree;
-
-        // Keep GPU camera uniforms in sync every frame (needed while paused too).
-        if (isGpu) {
-            this.params.cameraZoom = this.renderer.camera.zoom;
-            this.params.cameraX = this.renderer.camera.x;
-            this.params.cameraY = this.renderer.camera.y;
-            this.params.cameraTilt = this.renderer.camera.tilt;
-        }
 
         // --- Physics: advance in fixed dt increments proportional to real time ---
         // This keeps the simulation evolving at the same wall-clock rate regardless
@@ -1554,11 +1539,7 @@ export class SimulationManager {
             const dt = this.params.dt;
             let steps = 0;
             while (this.accumulator >= dt && steps < SimulationManager.MAX_SUBSTEPS) {
-                if (isGpu) {
-                    this.webGpuEngine!.step(dt, this.params);
-                } else {
-                    this.engine.update(dt, this.params);
-                }
+                this.engine.step(dt, this.params);
                 this.accumulator -= dt;
                 steps++;
             }
@@ -1566,9 +1547,14 @@ export class SimulationManager {
             if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
         }
 
-        // --- Render exactly once per displayed frame ---
-        if (isGpu) {
-            this.webGpuEngine!.render(this.params);
+        // --- Presentation: the one discriminant branch ---
+        if (this.engine.kind === 'self-rendering') {
+            // Keep GPU camera uniforms in sync (needed while paused too).
+            this.params.cameraZoom = this.renderer.camera.zoom;
+            this.params.cameraX = this.renderer.camera.x;
+            this.params.cameraY = this.renderer.camera.y;
+            this.params.cameraTilt = this.renderer.camera.tilt;
+            this.engine.render(this.params);
         } else {
             if (this.params.engineType === 'barnes') {
                 this.renderer.quadTree = (this.engine as BarnesHutEngine).root || null;
