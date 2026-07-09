@@ -175,7 +175,7 @@ describe('SimulationManager - accretion central SMBH', () => {
         const rms0 = rmsRadius(sim);
 
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < steps; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < steps; step++) engine.step(sim.params.dt, sim.params);
 
         // Keplerian orbits are clean closed ellipses: very few stars get flung out,
         // and the disk neither expands nor collapses appreciably (tighter than the

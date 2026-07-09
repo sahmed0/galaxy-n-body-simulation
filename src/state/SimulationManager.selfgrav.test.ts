@@ -107,7 +107,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         sim.initGalaxy();
 
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         // The BH is an inert, pinned marker: position and velocity are untouched.
         expect(sim.state.positionX[0]).toBe(0);
@@ -124,7 +124,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         // Barnes-Hut excludes the BH by *not inserting* it into the tree (rather
         // than a loop bound), so guard that path independently of BruteForce.
         const engine = new BarnesHutEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         expect(sim.state.positionX[0]).toBe(0);
         expect(sim.state.positionY[0]).toBe(0);
@@ -252,7 +252,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         const rms0 = rmsRadius(sim);
 
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         // A few stars on eccentric orbits is fine; a blow-up sends a large
         // fraction past several times the initial radius.
@@ -330,7 +330,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
         // The engine reads activeCount + useActivePassive: active feel active,
         // passive feel active, neither feels passive.
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         // The grainier active backbone makes the disk a touch hotter, so allow a
         // slightly larger flung fraction than the fully-sampled disk, but it must

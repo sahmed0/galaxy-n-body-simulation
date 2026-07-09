@@ -26,6 +26,7 @@ vi.mock('../physics', async (importOriginal) => {
     // and honours mockState.initBehavior so a test can force init to reject with
     // the same typed error the real engine throws.
     class MockWebGPUEngine {
+        kind = 'self-rendering' as const;
         onDeviceLost: ((info: GPUDeviceLostInfo) => void) | null = null;
         init = vi.fn(async () => {
             if (mockState.initBehavior === 'fail') {
@@ -39,8 +40,6 @@ vi.mock('../physics', async (importOriginal) => {
         render = vi.fn();
         getLastDispatchTime = () => 0;
         getMemoryUsageMB = () => 0;
-        getPositions = () => new Float32Array(0);
-        getVelocities = () => new Float32Array(0);
         dispose = vi.fn();
         constructor() {
             mockState.instances.push(this);
@@ -48,10 +47,9 @@ vi.mock('../physics', async (importOriginal) => {
     }
 
     class MockWorkerBridge {
+        kind = 'shared-state' as const;
         dispose = vi.fn();
-        update = vi.fn();
-        getPositions = () => new Float32Array(0);
-        getVelocities = () => new Float32Array(0);
+        step = vi.fn();
     }
 
     return { ...actual, WebGPUEngine: MockWebGPUEngine, WorkerBridge: MockWorkerBridge };
@@ -101,7 +99,7 @@ describe('SimulationManager - WebGPU init success', () => {
         await sim.init('canvas');
 
         expect(sim.webGpuAvailable).toBe(true);
-        expect(sim.activeEngineStr).toBe('gpu');
+        expect(sim.engine).toBe(sim.webGpuEngine);
         expect(sim.webGpuEngine).not.toBeNull();
         expect(sim.engine).toBe(sim.webGpuEngine);
         expect(sim.params.engineType).toBe('webgpu');
@@ -118,7 +116,7 @@ describe('SimulationManager - WebGPU init failure', () => {
         await sim.init('canvas');
 
         expect(sim.webGpuAvailable).toBe(false);
-        expect(sim.activeEngineStr).toBe('cpu');
+        expect(sim.engine).not.toBe(sim.webGpuEngine);
         expect(sim.webGpuEngine).toBeNull();
         expect(sim.params.engineType).toBe('barnes');
         expect(sim.engine).toBeInstanceOf(BarnesHutEngine);
@@ -153,7 +151,7 @@ describe('SimulationManager.switchEngine - selecting WebGPU', () => {
 
         // No new WebGPU engine should have been constructed.
         expect(mockState.instances.length).toBe(instancesBefore);
-        expect(sim.activeEngineStr).toBe('cpu');
+        expect(sim.engine).not.toBe(sim.webGpuEngine);
         expect(sim.engine).toBeInstanceOf(BarnesHutEngine);
         expect(sim.params.engineType).toBe('barnes');
         expect(fallbackSpy).toHaveBeenCalledWith(
@@ -177,7 +175,7 @@ describe('SimulationManager.switchEngine - selecting WebGPU', () => {
         await sim.switchEngine('webgpu');
 
         expect(sim.webGpuAvailable).toBe(false);
-        expect(sim.activeEngineStr).toBe('cpu');
+        expect(sim.engine).not.toBe(sim.webGpuEngine);
         expect(sim.engine).toBeInstanceOf(BarnesHutEngine);
         expect(sim.params.engineType).toBe('barnes');
         expect(fallbackSpy).toHaveBeenCalledWith(
@@ -199,7 +197,7 @@ describe('SimulationManager - runtime WebGPU device loss', () => {
         await flush();
 
         expect(sim.webGpuAvailable).toBe(true);
-        expect(sim.activeEngineStr).toBe('gpu');
+        expect(sim.engine).toBe(sim.webGpuEngine);
         expect(sim.webGpuEngine).toBe(gpuEngine);
         expect(gpuEngine!.init).toHaveBeenCalledTimes(2); // initial + recovery
         expect(fallbackSpy).not.toHaveBeenCalled();
@@ -217,7 +215,7 @@ describe('SimulationManager - runtime WebGPU device loss', () => {
         await flush();
 
         expect(sim.webGpuAvailable).toBe(false);
-        expect(sim.activeEngineStr).toBe('cpu');
+        expect(sim.engine).not.toBe(sim.webGpuEngine);
         expect(sim.webGpuEngine).toBeNull();
         expect(sim.params.engineType).toBe('barnes');
         expect(sim.engine).toBeInstanceOf(BarnesHutEngine);
@@ -243,7 +241,7 @@ describe('SimulationManager - runtime WebGPU device loss', () => {
         await flush();
 
         expect(sim.webGpuAvailable).toBe(false);
-        expect(sim.activeEngineStr).toBe('cpu');
+        expect(sim.engine).not.toBe(sim.webGpuEngine);
         expect(sim.engine).toBeInstanceOf(BarnesHutEngine);
         expect(fallbackSpy).toHaveBeenCalledWith(
             expect.stringContaining('WebGPU device lost'),

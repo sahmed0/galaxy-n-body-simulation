@@ -99,7 +99,7 @@ function makeParams(theta: number): PhysicsParams {
 function errorsAt(cloud: CloudBody[], aBruteX: Float64Array, aBruteY: Float64Array, theta: number): { max: number; rms: number } {
     const state = makeState(cloud);
     const engine = new BarnesHutEngine(state);
-    engine.update(1, makeParams(theta)); // dt = 1, v starts at 0 => v == acceleration
+    engine.step(1, makeParams(theta)); // dt = 1, v starts at 0 => v == acceleration
 
     let maxRel = 0;
     let sumDsq = 0;
