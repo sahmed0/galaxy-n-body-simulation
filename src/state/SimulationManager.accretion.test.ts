@@ -15,7 +15,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    ENGINE_PRESETS,
+    presetFor,
     MIN_DT_FRACTION,
     ACCRETION_BH_MASS,
     GALAXY_CENTRAL_BH_MASS,
@@ -93,7 +93,7 @@ describe('SimulationManager - accretion preset baseline', () => {
 
         // With the high central mass the adaptive timestep shrinks dt below the
         // fixed preset value to resolve the fast inner orbits.
-        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+        const presetDt = presetFor(sim.params.engineType).timeStep;
         expect(sim.params.dt).toBeLessThanOrEqual(presetDt);
         // The fastest orbit (peak angular frequency over the annulus) must be
         // resolved by at least ~30 leapfrog steps.
@@ -114,7 +114,7 @@ describe('SimulationManager - accretion adaptive timestep', () => {
     it('derives a finite dt within [floor, presetDt] for the accretion preset', () => {
         const sim = makeSim('accretion');
         sim.initGalaxy();
-        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+        const presetDt = presetFor(sim.params.engineType).timeStep;
         expect(Number.isFinite(sim.params.dt)).toBe(true);
         expect(sim.params.dt).toBeGreaterThan(0);
         expect(sim.params.dt).toBeLessThanOrEqual(presetDt);

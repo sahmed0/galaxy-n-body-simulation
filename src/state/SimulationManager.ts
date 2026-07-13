@@ -10,18 +10,36 @@ import {
     BarnesHutEngine,
     WorkerBridge,
 } from '../physics';
-import type { AnyEngine } from '../physics';
+import type { AnyEngine, EngineType } from '../physics';
 import { CanvasRenderer } from '../rendering';
 import { massToColor } from '../utils';
 
+/** Per-engine default physics parameters applied on an engine switch. */
+export interface EnginePreset {
+    theta: number;
+    softening: number;
+    timeStep: number;
+}
+
 /**
- * Preset configuration values for different physics engines.
+ * Preset configuration values for different physics engines. The worker engine has
+ * no entry yet (have plan to add one); until then it shares the Barnes-Hut preset via
+ * {@link presetFor}.
  */
-export const ENGINE_PRESETS = {
+export const ENGINE_PRESETS: Record<Exclude<EngineType, 'worker'>, EnginePreset> = {
     brute: { theta: 0.0, softening: 1.0, timeStep: 0.016 },
     barnes: { theta: 1.0, softening: 1.0, timeStep: 0.016 },
     webgpu: { theta: 0.0, softening: 1.0, timeStep: 0.016 }
 };
+
+/**
+ * Resolves the preset for any engine type. The worker path is not yet in
+ * {@link ENGINE_PRESETS}, so it falls back to the Barnes-Hut preset (it runs the
+ * same algorithm off-thread) until it gets its own entry.
+ */
+export function presetFor(type: EngineType): EnginePreset {
+    return type === 'worker' ? ENGINE_PRESETS.barnes : ENGINE_PRESETS[type];
+}
 
 /**
  * Base radius for galaxy particle distribution generation. Used by the accretion
@@ -283,7 +301,7 @@ export class SimulationManager {
      * Adjusted dynamically by runtime interactions in the UI.
      */
     params = {
-        engineType: 'webgpu',
+        engineType: 'webgpu' as EngineType,
         // Simulation preset (initial conditions):
         //   'accretion' - SMBH/halo-dominated; disk is light (test-particle) -> rings
         //   'galaxy'    - massive self-gravitating disk tuned to Toomre Q -> spiral arms
@@ -425,7 +443,7 @@ export class SimulationManager {
             await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
             this.registerWebGpuLossHandler();
             this.webGpuEngine.updateUniforms(this.params.dt, this.params);
-            console.log('WebGPU device re-created; continuing on GPU.');
+            console.info('WebGPU device re-created; continuing on GPU.');
         } catch (err) {
             console.error('WebGPU re-creation failed:', err);
             this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) and could not be re-created - running CPU Barnes-Hut`);
@@ -903,8 +921,7 @@ export class SimulationManager {
     }
 
     private effectiveSoftening(): number {
-        const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
-        const base = preset ? preset.softening : ENGINE_PRESETS.brute.softening;
+        const base = presetFor(this.params.engineType).softening;
         if (this.params.preset !== 'galaxy') return base;
         // Collisionality is set by the heavy *active* macro-particles (each carries
         // Mdisk / N_active and sources the field), so the relevant mass and spacing
@@ -946,8 +963,7 @@ export class SimulationManager {
      * falls back to the preset dt otherwise. Mirrors {@link effectiveSoftening}.
      */
     computeAdaptiveTimestep(): number {
-        const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
-        const presetDt = preset ? preset.timeStep : ENGINE_PRESETS.brute.timeStep;
+        const presetDt = presetFor(this.params.engineType).timeStep;
         if (this.params.preset === 'accretion') {
             // Resolve the fastest orbit about the central SMBH + halo. Sample
             // Omega(r) = vCirc(r)/r analytically over the annulus
@@ -1378,18 +1394,16 @@ export class SimulationManager {
      * Switches the active physics engine to the requested type.
      * @param type - The target engine's string identifier.
      */
-    async switchEngine(type: string) {
+    async switchEngine(type: EngineType) {
         const quadTreeGroup = document.getElementById('ui-quadtree-group');
         if (quadTreeGroup) {
             quadTreeGroup.style.display = type === 'barnes' ? 'flex' : 'none';
         }
 
-        const preset = ENGINE_PRESETS[type as keyof typeof ENGINE_PRESETS];
-        if (preset) {
-            this.params.theta = preset.theta;
-            this.params.softening = preset.softening;
-            this.params.dt = preset.timeStep;
-        }
+        const preset = presetFor(type);
+        this.params.theta = preset.theta;
+        this.params.softening = preset.softening;
+        this.params.dt = preset.timeStep;
         // The preset resets softening to the accretion-preset value; restore the
         // larger self-gravitating softening (no-op for the accretion preset) before
         // softResetVelocities recomputes the IC, which reads params.softening.
@@ -1425,8 +1439,6 @@ export class SimulationManager {
                 this.onEngineFallback('WebGPU unavailable - running CPU Barnes-Hut');
                 return;
             }
-
-            console.log("Switching to WebGPU...");
 
             try {
                 if (!this.webGpuEngine) {

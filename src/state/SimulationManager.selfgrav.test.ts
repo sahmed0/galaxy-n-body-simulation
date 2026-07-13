@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    ENGINE_PRESETS,
+    presetFor,
     MIN_DT_FRACTION,
     DISK_SCALE_LENGTH,
     TARGET_F_DISK,
@@ -188,7 +188,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         const sim = makeSim('galaxy');
         sim.initGalaxy();
 
-        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+        const presetDt = presetFor(sim.params.engineType).timeStep;
 
         // Adaptive dt must not run faster than the engine preset...
         expect(sim.params.dt).toBeLessThanOrEqual(presetDt);
