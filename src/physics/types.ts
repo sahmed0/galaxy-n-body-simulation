@@ -6,6 +6,12 @@ import { PhysicsState } from './PhysicsState';
 export type InitialConditionType = PhysicsState;
 
 /**
+ * The set of selectable physics backends. `worker` runs Barnes-Hut off the main
+ * thread via {@link SharedStateEngine}; the rest run inline.
+ */
+export type EngineType = 'brute' | 'barnes' | 'webgpu' | 'worker';
+
+/**
  * Configuration parameters for the physics simulation step.
  */
 export interface PhysicsParams {

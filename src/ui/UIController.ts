@@ -2,6 +2,13 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { SimulationManager, presetDmDefault } from '../state';
+import { el, elOrNull } from '../utils';
+import type { EngineType } from '../physics';
+
+/** Narrows a raw `<select>` value to a valid {@link EngineType}. */
+function isEngineType(v: string): v is EngineType {
+    return v === 'brute' || v === 'barnes' || v === 'webgpu' || v === 'worker';
+}
 
 /**
  * Disables the "GPU: WebGPU" option in the engine dropdown so it can no longer
@@ -46,21 +53,31 @@ function showEngineBanner(message: string) {
  * @param sim - The SimulationManager instance.
  */
 export function setupUI(sim: SimulationManager) {
-    const engineSelect = document.getElementById('ui-engine') as HTMLSelectElement;
-    const presetSelect = document.getElementById('ui-preset') as HTMLSelectElement;
-    const starsInput = document.getElementById('ui-stars') as HTMLInputElement;
-    const gravityInput = document.getElementById('ui-gravity') as HTMLInputElement;
-    const gravityVal = document.getElementById('ui-gravity-value') as HTMLElement;
-    const darkMatterInput = document.getElementById('ui-dark-matter') as HTMLInputElement;
-    const darkMatterVal = document.getElementById('ui-dark-matter-value') as HTMLElement;
-    const restartBtn = document.getElementById('ui-restart') as HTMLButtonElement;
-    const pauseBtn = document.getElementById('ui-pause') as HTMLButtonElement;
-    const showGridCheckbox = document.getElementById('ui-show-grid') as HTMLInputElement;
-
-    if (!engineSelect || !starsInput || !gravityInput || !darkMatterInput || !restartBtn || !pauseBtn) {
-        console.error("UI elements not found!");
+    // Required controls: if any is missing the template is broken, so `el` throws
+    // and we bail out (preserving the old fail-soft behaviour of logging + return).
+    let engineSelect: HTMLSelectElement;
+    let starsInput: HTMLInputElement;
+    let gravityInput: HTMLInputElement;
+    let darkMatterInput: HTMLInputElement;
+    let restartBtn: HTMLButtonElement;
+    let pauseBtn: HTMLButtonElement;
+    try {
+        engineSelect = el<HTMLSelectElement>('ui-engine');
+        starsInput = el<HTMLInputElement>('ui-stars');
+        gravityInput = el<HTMLInputElement>('ui-gravity');
+        darkMatterInput = el<HTMLInputElement>('ui-dark-matter');
+        restartBtn = el<HTMLButtonElement>('ui-restart');
+        pauseBtn = el<HTMLButtonElement>('ui-pause');
+    } catch (err) {
+        console.error('UI elements not found!', err);
         return;
     }
+
+    // Optional controls: absent is acceptable, so each call site null-guards them.
+    const presetSelect = elOrNull<HTMLSelectElement>('ui-preset');
+    const gravityVal = elOrNull<HTMLElement>('ui-gravity-value');
+    const darkMatterVal = elOrNull<HTMLElement>('ui-dark-matter-value');
+    const showGridCheckbox = elOrNull<HTMLInputElement>('ui-show-grid');
 
     engineSelect.value = sim.params.engineType;
     if (presetSelect) presetSelect.value = sim.params.preset;
@@ -90,6 +107,7 @@ export function setupUI(sim: SimulationManager) {
 
     engineSelect.addEventListener('change', async (e) => {
         const target = e.target as HTMLSelectElement;
+        if (!isEngineType(target.value)) return;
         sim.params.engineType = target.value;
         await sim.switchEngine(sim.params.engineType);
     });
@@ -121,6 +139,13 @@ export function setupUI(sim: SimulationManager) {
         const target = e.target as HTMLInputElement;
         sim.params.gravity = parseFloat(target.value);
         if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);
+    });
+
+    // The leapfrog half-step stagger and adaptive dt both depend on G, so once the
+    // user releases the slider re-stagger velocities to reconcile them (doing this
+    // on every `input` tick mid-drag would jolt the sim repeatedly).
+    gravityInput.addEventListener('change', () => {
+        sim.softResetVelocities();
     });
 
     darkMatterInput.addEventListener('input', (e) => {

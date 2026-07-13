@@ -33,8 +33,6 @@ self.onmessage = (e: MessageEvent) => {
         // Pre-configure the physics iteration kernel.
         engine = new BarnesHutEngine(state);
 
-        console.log('[PhysicsWorker] Initialised');
-
         // Enter the infinite wait/notify cycle, blocking efficiently instead of spinning.
         loop();
     } else if (type === 'PING') {

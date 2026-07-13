@@ -6,8 +6,10 @@ import { PhysicsMemory } from './PhysicsMemory';
 import { PhysicsState } from './PhysicsState';
 
 /**
- * Acts as an interfacial broker connecting a running Web Worker physics loop
- * asynchronously to the main application render cycle via SharedArrayBuffer.
+ * Main-thread handle to the physics Web Worker. It shares a single
+ * {@link PhysicsMemory} SharedArrayBuffer with the worker: `step()` posts work by
+ * flipping the status flag, the worker computes into the same buffer, and the
+ * renderer reads the result with no copying.
  */
 export class WorkerBridge implements SharedStateEngine {
     public readonly kind = 'shared-state' as const;
@@ -19,8 +21,9 @@ export class WorkerBridge implements SharedStateEngine {
     private lastLatencyMs = 0;
 
     /**
-     * Mounts the Worker instance and dispatches fundamental configurations.
-     * @param memory - Structured wrapper for SharedArrayBuffer components interacting with the worker thread.
+     * Spawns the worker and hands it the shared buffer via an INIT message so both
+     * sides view the same particle arrays.
+     * @param memory - The shared physics memory both threads read and write.
      */
     constructor(memory: PhysicsMemory) {
         this.memory = memory;
@@ -61,8 +64,6 @@ export class WorkerBridge implements SharedStateEngine {
             this.lastPingTime = performance.now();
             this.worker.postMessage({ type: 'PING' });
         }, 1000);
-
-        console.log('[WorkerBridge] Worker spawned and memory shared.');
     }
 
     /**
@@ -80,17 +81,19 @@ export class WorkerBridge implements SharedStateEngine {
     }
 
     /**
-     * Retains ping tracker analysis of internal data synchronisation rates.
-     * @returns Evaluation delay in milliseconds separating logical context bridges.
+     * Round-trip latency of the last PING/PONG exchange, in milliseconds.
+     * @returns The most recently measured worker round-trip time.
      */
     public getLastPingLatency(): number {
         return this.lastLatencyMs;
     }
 
     /**
-     * Maps coordinate variables internally reflecting initial physical arrangements globally.
-     * @param _n - Non-utilized counter inherited from the Interface syntax wrapper.
-     * @param initialConditions - Coordinate structure populating baseline worker structures asynchronously.
+     * Seeds the shared buffer with the given initial conditions. A no-op when the
+     * conditions already are the shared state (the common case), since the worker
+     * reads that buffer directly.
+     * @param _n - Total body count (unused; the shared arrays are already sized).
+     * @param initialConditions - Source arrays to copy into shared memory.
      */
     public init(_n: number, initialConditions: InitialConditionType): void {
         // Copy initial conditions into Shared Memory if needed
@@ -105,9 +108,11 @@ export class WorkerBridge implements SharedStateEngine {
     }
 
     /**
-     * Asynchronously offloads compute processing without blocking presentation threads using atomic status signaling.
-     * @param dt - Loop frequency evaluation parameter.
-     * @param params - Variables mapped dynamically and monitored locally inside workers using standard float arrays.
+     * Requests one physics step from the worker: writes the current params into the
+     * shared float slots and flips the status flag to COMPUTING. Drops the request
+     * (does nothing) if the worker is still busy with the previous step.
+     * @param dt - Time step to advance.
+     * @param params - Physical parameters written to the shared param slots.
      */
     public step(dt: number, params: PhysicsParams): void {
         const status = Atomics.load(this.memory.flags, PhysicsMemory.FLAG_STATUS);
