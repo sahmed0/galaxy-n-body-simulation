@@ -7,8 +7,8 @@
  * call these so the only thing differing between backends is the spatial
  * approximation, never the force formula.
  *
- * Design rule (non-negotiable, see SPEC.md): kernels return **acceleration** - no
- * `dt`, no `mass[i]` factor folded in. The integrator applies `dt` separately via
+ * Design rule (non-negotiable): kernels return **acceleration** - no `dt`, no
+ * `mass[i]` factor folded in. The integrator applies `dt` separately via
  * {@link applyKick}/{@link applyDrift}. This lets tests compare accelerations directly.
  *
  * Read-only position/mass arrays are typed {@link ArrayLike} so the same kernel

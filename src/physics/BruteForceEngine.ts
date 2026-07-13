@@ -18,17 +18,17 @@ export class BruteForceEngine implements SharedStateEngine {
     public state!: PhysicsState;
 
     /**
-     * Constructs the BruteForceEngine and immediately evaluates the provided state.
-     * @param state - The complete structure of data arrays that track simulation elements.
+     * Adopts the given state as the engine's working set.
+     * @param state - The SoA state this engine steps in place.
      */
     constructor(state: PhysicsState) {
         this.init(state.n, state);
     }
 
     /**
-     * Evaluates and updates the baseline state inside the engine.
-     * @param _n - The unused explicit particle count (handled via state inspection).
-     * @param initialConditions - The structure tracking starting attributes for all bodies.
+     * Adopts the given state as the engine's working set.
+     * @param _n - Total body count (unused; the engine reads `state.n` directly).
+     * @param initialConditions - The state this engine steps in place.
      */
     public init(_n: number, initialConditions: InitialConditionType): void {
         this.state = initialConditions;
@@ -50,8 +50,8 @@ export class BruteForceEngine implements SharedStateEngine {
      * 2. v(t+dt/2) = v(t-dt/2) + a(t) * dt
      * 3. r(t+dt) = r(t) + v(t+dt/2) * dt
      * 
-     * @param dt - The time step representing duration elapsed for numeric iteration logic.
-     * @param params - Configuration parameter blocks evaluating spatial phenomena like Dark Matter.
+     * @param dt - The time step to advance by.
+     * @param params - The physical parameters (gravity, softening, halo, SMBH, …).
      */
     public step(dt: number, params: PhysicsParams): void {
         // 1. Calculate a(t) and apply to v immediately
@@ -73,11 +73,10 @@ export class BruteForceEngine implements SharedStateEngine {
     }
 
     /**
-     * Brute-force O(N^2) gravity calculation.
-     * Calculated acceleration is added directly to velocity.
-     * 
-     * @param dt - Numerical time duration for computing velocity modifiers based on active delta times.
-     * @param params - Simulation constants establishing baseline forces between multiple active and trailing bodies.
+     * Brute-force O(N^2) gravity: sums the pairwise, halo and SMBH accelerations and
+     * kicks each velocity by `accel * dt`.
+     * @param dt - The time step applied to each kick.
+     * @param params - The physical parameters governing the forces.
      */
     private calculateForcesAndAddKicks(dt: number, params: PhysicsParams): void {
         const n = this.state.n;

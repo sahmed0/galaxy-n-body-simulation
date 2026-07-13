@@ -14,13 +14,15 @@ import {
 } from './kernels';
 
 /**
- * Barnes-Hut Physics Engine.
+ * Barnes-Hut O(N log N) gravity engine: rebuilds a {@link QuadTree} each step and
+ * approximates distant groups by their centre of mass (theta criterion), summing
+ * the collected sources through the same `pairwiseAccel` kernel as brute force so
+ * the two backends differ only in the spatial approximation, not the force law.
  */
 export class BarnesHutEngine implements SharedStateEngine {
     public readonly kind = 'shared-state' as const;
     public state!: PhysicsState;
     public root?: QuadTree;
-    private hasLogged: boolean = false;
 
     // Reused scratch buffers for the per-particle tree walk: the collected sources
     // (a leaf's bodies + accepted internal nodes' COMs) acting on the current body,
@@ -44,15 +46,13 @@ export class BarnesHutEngine implements SharedStateEngine {
     }
 
     /**
-     * Initialises the engine with the provided number of bodies and starting data.
-     * @param n - The number of bodies to simulate.
-     * @param initialConditions - The structure holding initial state information.
+     * Adopts the given state as the engine's working set. The tree is rebuilt from
+     * it every step, so no per-body setup is needed here.
+     * @param _n - Total body count (unused; the engine reads `state.n` directly).
+     * @param initialConditions - The state this engine steps in place.
      */
-    public init(n: number, initialConditions: InitialConditionType): void {
+    public init(_n: number, initialConditions: InitialConditionType): void {
         this.state = initialConditions;
-        this.hasLogged = false;
-
-        console.log(`[BarnesHutEngine] Initialised with ${n} bodies.`);
     }
 
     /**
@@ -183,11 +183,6 @@ export class BarnesHutEngine implements SharedStateEngine {
         // Index 0 (the pinned BH marker) is left at the origin.
         for (let i = start; i < n; i++) {
             applyDrift(px, py, vx, vy, i, dt);
-        }
-
-        if (!this.hasLogged) {
-            console.log("Barnes-Hut engine: Physics active.");
-            this.hasLogged = true;
         }
     }
 

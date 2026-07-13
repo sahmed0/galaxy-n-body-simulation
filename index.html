@@ -818,7 +818,8 @@
       <h3>Active/Passive Computational Subsetting</h3>
       <p>
         Even with Barnes-Hut, rendering a visually dense N-body system of
-        100,000+ stars on CPU threads is challenging. To solve this, we
+        tens of thousands of stars (up to 200,000 on the GPU engine) on CPU
+        threads is challenging. To solve this, we
         introduce an Active/Passive heuristic, splitting the system into two
         mass-distinct sets:
       </p>
@@ -855,10 +856,12 @@
       <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
         <li>
           <strong>Brute Force Engine:</strong> Implements an $O(N^2)$
-          direct-sum calculation using Velocity-Verlet integration. It
-          maximizes efficiency on a single thread by exploiting Newton's Third
-          Law (calculating the force between $i$ and $j$ once and applying it
-          to both), effectively halving the required calculations.
+          direct-sum calculation using kick-drift <em>leapfrog</em> integration
+          (symplectic, with velocities staggered half a step ahead of positions).
+          It deliberately computes each $i$&ndash;$j$ pair twice rather than
+          exploiting Newton's Third Law, so that Brute Force and Barnes-Hut share a
+          single force kernel (<code>pairwiseAccel</code>) &mdash; trading a 2&times;
+          arithmetic cost for one identical, testable force law across engines.
         </li>
         <li>
           <strong>Barnes-Hut Engine:</strong> Utilizes a QuadTree data

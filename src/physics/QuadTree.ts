@@ -161,10 +161,11 @@ export class QuadTree {
     }
 
     /**
-     * Inserts an element inside the bounds of this tree or a relative descendent recursively.
-     * @param index - Identification number referencing global coordinates tracked inside SoA buffers.
-     * @param state - The active structure managing positions for insertion referencing.
-     * @returns Boolean confirming successful storage location internally.
+     * Inserts body `index` into this node, subdividing and pushing it down to the
+     * child that contains its position when the leaf is full.
+     * @param index - Body index into the SoA position arrays.
+     * @param state - The state holding the body's position.
+     * @returns True if the body fell within this node's bounds and was stored.
      */
     insert(index: number, state: PhysicsState): boolean {
         const x = state.positionX[index];
@@ -207,8 +208,9 @@ export class QuadTree {
     }
 
     /**
-     * Evaluates localised density mapping and generates a consolidated center of mass dynamically representing child nodes.
-     * @param state - Physical object arrays evaluating raw masses to compound into node aggregates.
+     * Computes each node's total mass and centre of mass bottom-up, so the tree walk
+     * can treat a distant node as a single pseudo-body at its COM.
+     * @param state - The state supplying per-body masses and positions.
      */
     calculateMassDistribution(state: PhysicsState): void {
         // Init properties
@@ -265,9 +267,10 @@ export class QuadTree {
     }
 
     /**
-     * Gathers spatial rectangles defining areas monitored within instances locally.
-     * @param boundaries - Active running list tracking spatial rectangles parsed internally.
-     * @returns Complete set of Boundary rectangles encompassing this localised network.
+     * Collects this node's boundary and all descendants' into one flat list, used to
+     * draw the tree for debugging.
+     * @param boundaries - Accumulator the boundaries are pushed into.
+     * @returns The same list, now containing this subtree's boundaries.
      */
     getAllBoundaries(boundaries: Boundary[] = []): Boundary[] {
         boundaries.push(this.boundary);

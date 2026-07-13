@@ -127,29 +127,28 @@ export class CanvasRenderer {
         // Additive blending for glow
         ctx.globalCompositeOperation = 'lighter';
 
-        for (let i = 0; i < n; i++) {
-            const x = px[i];
-            const y = py[i];
+        // --- SUPERMASSIVE BLACK HOLE RENDER (index 0) ---
+        // Keep the high-quality render for the main attractor. Drawn once, not in a
+        // loop over every body.
+        if (n > 0) {
+            const x = px[0];
+            const y = py[0];
 
-            if (i === 0) {
-                // --- SUPERMASSIVE BLACK HOLE RENDER ---
-                // Keep the high-quality render for the main attractor
-                ctx.save();
-                ctx.globalCompositeOperation = 'source-over';
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
 
-                // 1. Accretion Disk / Light Bending (Glow around)
-                const grad = ctx.createRadialGradient(x, y, 2, x, y, 5);
-                grad.addColorStop(0, 'rgba(255, 251, 221, 1)'); // Event Horizon
-                grad.addColorStop(0.3, 'rgba(255, 251, 221, 1)'); // Inner hot disk
-                grad.addColorStop(0.5, 'rgba(255, 251, 221, 1)'); // Outer glow
-                grad.addColorStop(1, 'rgba(255, 251, 221, 0)');
+            // Accretion Disk / Light Bending (Glow around)
+            const grad = ctx.createRadialGradient(x, y, 2, x, y, 5);
+            grad.addColorStop(0, 'rgba(255, 251, 221, 1)'); // Event Horizon
+            grad.addColorStop(0.3, 'rgba(255, 251, 221, 1)'); // Inner hot disk
+            grad.addColorStop(0.5, 'rgba(255, 251, 221, 1)'); // Outer glow
+            grad.addColorStop(1, 'rgba(255, 251, 221, 0)');
 
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(x, y, 5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
         }
 
         // --- PER-PARTICLE RENDERER START ---

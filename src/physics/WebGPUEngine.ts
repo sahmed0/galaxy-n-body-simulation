@@ -268,24 +268,21 @@ export class WebGPUEngine implements SelfRenderingEngine {
             entries: [{ binding: 0, resource: { buffer: this.bufferParams } }],
         });
 
-        console.log("WebGPU Initialized");
-
         this.setParticles(n, initialState, activeCount);
     }
 
     /**
-     * Initialises and writes physical elements directly into GPU internal buffer state.
-     * Overwrites memory directly by passing arrays sequentially instead of struct-of-arrays representation.
-     * @param n - Defined number of simulated particles to initialise.
-     * @param initialState - Original configuration source struct to extract details from.
-     * @param activeCount - High mass element tracking boundary.
+     * Uploads `n` bodies from a CPU {@link PhysicsState} into the GPU particle
+     * buffers, packing position+velocity and the per-body properties into the two
+     * vec4 layouts the compute shader expects.
+     * @param n - Number of bodies to upload.
+     * @param initialState - Source SoA arrays to read from.
+     * @param activeCount - Number of leading heavy (field-generating) bodies.
      */
     setParticles(n: number, initialState: InitialConditionType, activeCount: number) {
         if (!this.device) return;
         this.count = n;
         this.activeCount = activeCount;
-
-        console.log(`[WebGPUEngine] Set particles: ${n}, Active Heavy: ${this.activeCount}`);
 
         const dataPosVel = new Float32Array(n * 4);
         const dataProps = new Float32Array(n * 4);
@@ -375,10 +372,11 @@ export class WebGPUEngine implements SelfRenderingEngine {
     }
 
     /**
-     * Flushes local configuration variables (e.g., zoom, dt, mass rules) to WebGPU Unifoms, 
-     * making sure the compute shaders can evaluate state with the newest boundaries.
-     * @param dt - Delta time multiplier.
-     * @param params - Reference standard config object carrying runtime simulation tuning.
+     * Writes the current frame's parameters (dt, gravity, softening, camera, mass
+     * rules, …) into the GPU uniform buffer so the next compute and render pass see
+     * up-to-date values. Also resizes the canvas to the window if it changed.
+     * @param dt - Time step for this frame.
+     * @param params - Runtime simulation parameters to upload.
      */
     updateUniforms(dt: number, params: PhysicsParams) {
         if (!this.device || !this.context) return;
@@ -483,16 +481,16 @@ export class WebGPUEngine implements SelfRenderingEngine {
     }
 
     /**
-     * Extracts telemetry tracking GPU hardware processing times per compute pass.
-     * @returns Duration in milliseconds simulating the last iteration sequence.
+     * Wall-clock time the last compute dispatch took to complete, in milliseconds.
+     * @returns Duration of the most recent compute pass.
      */
     getLastDispatchTime(): number {
         return this.lastDispatchTimeMs;
     }
 
     /**
-     * Computes the approximate RAM utilized across VRAM buffer pools.
-     * @returns Byte count scaled upward to Megabytes.
+     * Approximate GPU memory held by the particle and property buffers.
+     * @returns Buffer footprint in megabytes.
      */
     getMemoryUsageMB(): number {
         if (!this.bufferParticlesA || !this.bufferProps) return 0;
@@ -501,8 +499,8 @@ export class WebGPUEngine implements SelfRenderingEngine {
     }
 
     /**
-     * Modifies the internal layout visibility attribute.
-     * @param visible - Target presentation tracking status.
+     * Shows or hides this engine's own canvas.
+     * @param visible - Whether the GPU canvas should be displayed.
      */
     setVisible(visible: boolean) {
         this.canvas.style.display = visible ? 'block' : 'none';
