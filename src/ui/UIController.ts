@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import { SimulationManager, presetDmDefault } from '../state';
+import { SimulationManager, presetDmDefault, ENGINE_MAX_COUNT } from '../state';
 import { el, elOrNull } from '../utils';
 import type { EngineType } from '../physics';
 
@@ -9,6 +9,14 @@ import type { EngineType } from '../physics';
 function isEngineType(v: string): v is EngineType {
     return v === 'brute' || v === 'barnes' || v === 'webgpu' || v === 'worker';
 }
+
+/** Readable engine names for clamp banners. */
+const ENGINE_LABEL: Record<EngineType, string> = {
+    brute: 'CPU Brute Force',
+    barnes: 'CPU Barnes-Hut',
+    worker: 'CPU Barnes-Hut (Worker)',
+    webgpu: 'GPU WebGPU',
+};
 
 /**
  * Disables the "GPU: WebGPU" option in the engine dropdown so it can no longer
@@ -24,12 +32,12 @@ function disableGpuOption(select: HTMLSelectElement) {
 }
 
 /**
- * Shows a transient, dismissable banner notifying the user of an engine change
- * (e.g. a forced fallback from WebGPU to a CPU engine). Reuses a single banner
- * element so repeated notices replace rather than stack.
+ * Shows a transient, dismissable banner. Reuses a single banner element so repeated
+ * notices replace rather than stack. Used for engine fallbacks, star-count clamps, and
+ * will be used for share-link and worker-fallback notices.
  * @param message - The text to display.
  */
-function showEngineBanner(message: string) {
+function showBanner(message: string) {
     let banner = document.getElementById('engine-banner');
     if (!banner) {
         banner = document.createElement('div');
@@ -86,14 +94,15 @@ export function setupUI(sim: SimulationManager) {
     // reflect that immediately, and stay in sync if the device is lost later.
     if (!sim.webGpuAvailable) {
         disableGpuOption(engineSelect);
-        showEngineBanner('WebGPU unavailable - running CPU Barnes-Hut');
+        showBanner('WebGPU unavailable - running CPU Barnes-Hut');
     }
     sim.onEngineFallback = (reason: string) => {
         disableGpuOption(engineSelect);
         engineSelect.value = sim.params.engineType;
-        showEngineBanner(reason);
+        showBanner(reason);
     };
     starsInput.value = sim.params.count.toString();
+    starsInput.max = ENGINE_MAX_COUNT[sim.params.engineType].toString();
     gravityInput.value = sim.params.gravity.toString();
     if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);
     darkMatterInput.value = sim.params.dmStrength.toString();
@@ -108,8 +117,23 @@ export function setupUI(sim: SimulationManager) {
     engineSelect.addEventListener('change', async (e) => {
         const target = e.target as HTMLSelectElement;
         if (!isEngineType(target.value)) return;
-        sim.params.engineType = target.value;
-        await sim.switchEngine(sim.params.engineType);
+        const newType = target.value;
+
+        // Each engine has its own particle budget. Switching to a lower-capacity engine
+        // clamps the current count and re-inits (a smaller N requires re-allocating buffers,
+        // which switchEngine alone does not do - restart rebuilds them).
+        const cap = ENGINE_MAX_COUNT[newType];
+        starsInput.max = cap.toString();
+        const clamped = sim.params.count > cap;
+        if (clamped) {
+            sim.params.count = cap;
+            starsInput.value = cap.toString();
+            showBanner(`Star count clamped to ${cap.toLocaleString()} (${ENGINE_LABEL[newType]} limit)`);
+        }
+
+        sim.params.engineType = newType;
+        await sim.switchEngine(newType);
+        if (clamped) await sim.restart();
     });
 
     if (presetSelect) {
@@ -130,9 +154,17 @@ export function setupUI(sim: SimulationManager) {
     starsInput.addEventListener('change', (e) => {
         const target = e.target as HTMLInputElement;
         const val = parseInt(target.value, 10);
-        if (!isNaN(val) && val > 0) {
-            sim.params.count = val;
+        if (isNaN(val)) return;
+
+        const cap = ENGINE_MAX_COUNT[sim.params.engineType];
+        const clamped = Math.max(1_000, Math.min(val, cap));
+        if (clamped !== val) {
+            target.value = clamped.toString();
+            if (val > cap) {
+                showBanner(`Star count clamped to ${cap.toLocaleString()} (${ENGINE_LABEL[sim.params.engineType]} limit)`);
+            }
         }
+        sim.params.count = clamped;
     });
 
     gravityInput.addEventListener('input', (e) => {

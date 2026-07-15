@@ -42,6 +42,18 @@ export function presetFor(type: EngineType): EnginePreset {
 }
 
 /**
+ * Maximum particle count each engine can sustain. Brute force is O(N^2) on the main
+ * thread so it caps lowest; the tree engines scale to ~50k; WebGPU handles the largest N.
+ * The UI clamps the stars input and, on engine switch, the current count to these bounds.
+ */
+export const ENGINE_MAX_COUNT: Record<EngineType, number> = {
+    brute: 20_000,
+    barnes: 50_000,
+    worker: 50_000,
+    webgpu: 200_000,
+};
+
+/**
  * Base radius for galaxy particle distribution generation. Used by the accretion
  * preset, which seeds the disk in the annulus
  * [DISK_INNER_RADIUS, DISK_INNER_RADIUS + GALAXY_RADIUS]. The self-gravitating
