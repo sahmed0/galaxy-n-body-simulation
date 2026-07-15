@@ -103,14 +103,18 @@ export class WebGPUEngine implements SelfRenderingEngine {
     onDeviceLost: ((info: GPUDeviceLostInfo) => void) | null = null;
 
     constructor() {
-        // Create Canvas
+        // Create Canvas. Backing store is sized in physical pixels (CSS size x dpr) for HiDPI
+        // crispness; the shader compensates by scaling cameraZoom by dpr (see updateUniforms).
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.canvas = document.createElement('canvas');
         this.canvas.id = 'webgpu-canvas';
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        this.canvas.width = Math.round(window.innerWidth * dpr);
+        this.canvas.height = Math.round(window.innerHeight * dpr);
         this.canvas.style.position = 'fixed'; // Must be fixed, not absolute, to match CSS
         this.canvas.style.top = '0';
         this.canvas.style.left = '0';
+        this.canvas.style.width = window.innerWidth + 'px';
+        this.canvas.style.height = window.innerHeight + 'px';
         this.canvas.style.display = 'none'; // Hidden by default
         document.body.appendChild(this.canvas);
     }
@@ -381,10 +385,15 @@ export class WebGPUEngine implements SelfRenderingEngine {
     updateUniforms(dt: number, params: PhysicsParams) {
         if (!this.device || !this.context) return;
 
-        // Resize WebGPU Canvas if needed
-        if (this.canvas.width !== window.innerWidth || this.canvas.height !== window.innerHeight) {
-            this.canvas.width = window.innerWidth;
-            this.canvas.height = window.innerHeight;
+        // Resize WebGPU Canvas if needed. Backing store is CSS size x dpr (physical pixels).
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const physW = Math.round(window.innerWidth * dpr);
+        const physH = Math.round(window.innerHeight * dpr);
+        if (this.canvas.width !== physW || this.canvas.height !== physH) {
+            this.canvas.width = physW;
+            this.canvas.height = physH;
+            this.canvas.style.width = window.innerWidth + 'px';
+            this.canvas.style.height = window.innerHeight + 'px';
             // Need to reconfigure context if canvas size changes
             this.context?.configure({
                 device: this.device,
@@ -393,10 +402,14 @@ export class WebGPUEngine implements SelfRenderingEngine {
             });
         }
 
-        const uniformData = new Float32Array(
-            buildUniformFields(params, dt, this.count, this.activeCount,
-                this.canvas.width, this.canvas.height).map(f => f.value)
-        );
+        // canvasSize carries physical pixels, so scale cameraZoom by dpr to map world units to
+        // physical pixels uniformly (the shader multiplies both position and point size by zoom).
+        // cameraPos is left unscaled: it is subtracted before the zoom multiply in the shader.
+        const fields = buildUniformFields(params, dt, this.count, this.activeCount,
+            this.canvas.width, this.canvas.height);
+        const zoomField = fields.find(f => f.name === 'cameraZoom');
+        if (zoomField) zoomField.value *= dpr;
+        const uniformData = new Float32Array(fields.map(f => f.value));
         this.device.queue.writeBuffer(this.bufferParams!, 0, uniformData);
     }
 

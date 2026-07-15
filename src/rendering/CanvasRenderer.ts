@@ -28,6 +28,9 @@ export class CanvasRenderer {
     /** Current height of the canvas. */
     private height: number;
 
+    /** Device-pixel ratio applied to the backing store, capped at 2 to bound fill cost on mobile. */
+    private dpr: number = 1;
+
     /** The mass threshold determining when to render a particle as larger. */
     public massThreshold: number = 0;
 
@@ -64,10 +67,15 @@ export class CanvasRenderer {
      * Resizes the canvas context and camera viewport to match the active window dimensions.
      */
     private resize(): void {
+        // this.width/height stay in CSS pixels (the Camera works in CSS-pixel space). The backing
+        // store is scaled by dpr for crisp HiDPI rendering; render() maps CSS->device via setTransform.
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.width = window.innerWidth;
         this.height = window.innerHeight;
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
+        this.canvas.width = Math.round(this.width * this.dpr);
+        this.canvas.height = Math.round(this.height * this.dpr);
+        this.canvas.style.width = this.width + 'px';
+        this.canvas.style.height = this.height + 'px';
         this.camera.updateViewport(this.width, this.height);
     }
 
@@ -109,7 +117,10 @@ export class CanvasRenderer {
         const w = this.width;
         const h = this.height;
 
-        // Prepare context for fresh frame rendering
+        // Prepare context for fresh frame rendering. The base transform maps CSS pixels to device
+        // pixels (dpr); clearRect in CSS coords therefore clears the full backing store, and
+        // camera.apply() composes its translate/scale on top of this via ctx.save().
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
         ctx.globalCompositeOperation = 'source-over';
         ctx.clearRect(0, 0, w, h);
 

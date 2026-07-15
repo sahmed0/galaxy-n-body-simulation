@@ -12,6 +12,8 @@ function drawSpaceBackground() {
     const ctx = bgCanvas.getContext('2d');
     if (!ctx) return;
 
+    // Deliberately drawn at 1x device pixels (no DPR scaling): a static starfield backdrop where
+    // per-pixel crispness is imperceptible and the extra fill cost isn't worth it.
     const width = window.innerWidth * 1.2;
     const height = window.innerHeight * 1.2;
     bgCanvas.width = width;
