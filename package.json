@@ -14,6 +14,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/katex": "^0.16.8",
     "@vitest/coverage-v8": "^4.1.9",
     "@webgpu/types": "^0.1.70",
     "eslint": "^10.5.0",
@@ -26,7 +27,10 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
     "@kiwicarbon/assets": "^2.0.5",
-    "coi-serviceworker": "^0.1.7"
+    "coi-serviceworker": "^0.1.7",
+    "katex": "^0.17.0"
   }
 }

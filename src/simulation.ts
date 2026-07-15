@@ -6,6 +6,17 @@ import { setupUI, updateTelemetry, setupInteractions } from './ui';
 import './global.css';
 import './style.css';
 import './ui/ui.css';
+// Self-hosted fonts no runtime CDN under COEP.
+import '@fontsource/ibm-plex-sans/300.css';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/space-grotesk/300.css';
+import '@fontsource/space-grotesk/400.css';
+import '@fontsource/space-grotesk/500.css';
+import '@fontsource/space-grotesk/600.css';
+import '@fontsource/space-grotesk/700.css';
+import '@kiwicarbon/assets/dist/kiwi.css';
 
 /**
  * Draws a static deep space background with pinpoint stars on the bg-canvas.
