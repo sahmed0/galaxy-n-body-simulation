@@ -35,14 +35,10 @@ function drawSpaceBackground() {
   }
 }
 
-// Enforce Cross-Origin Isolation (COOP/COEP) to permit zero-copy `SharedArrayBuffer` memory allocations.
-// Web Workers require this security context to prevent high-res timer timing attacks (e.g., Spectre).
-if (!crossOriginIsolated) {
-  const errorMsg = 'SharedArrayBuffer is not defined. This site requires Cross-Origin Isolation (COOP/COEP headers). verify that the server is sending "Cross-Origin-Opener-Policy: same-origin" and "Cross-Origin-Embedder-Policy: require-corp".';
-  console.error(errorMsg);
-  alert(errorMsg);
-  throw new Error(errorMsg);
-}
+// Cross-Origin Isolation enables zero-copy SharedArrayBuffer, which the worker engine needs.
+// The app runs fine without it: PhysicsMemory falls back to a plain ArrayBuffer and the worker
+// option is disabled. Log the state for diagnostics only - never block startup.
+console.info(`Cross-origin isolated: ${crossOriginIsolated}`);
 
 const CANVAS_ID = 'sim-canvas';
 

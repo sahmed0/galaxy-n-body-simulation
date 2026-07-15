@@ -49,7 +49,7 @@ export class WorkerBridge implements SharedStateEngine {
         this.worker.postMessage({
             type: 'INIT',
             payload: {
-                sab: this.memory.sab,
+                sab: this.memory.buffer,
                 n: this.state.n
             }
         });

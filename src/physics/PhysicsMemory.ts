@@ -5,7 +5,9 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 export class PhysicsMemory {
-    public sab: SharedArrayBuffer;
+    public buffer: SharedArrayBuffer | ArrayBuffer;
+    /** True when `buffer` is a SharedArrayBuffer. Only then may the worker use `Atomics.wait`. */
+    public readonly isShared: boolean;
     public positionX: Float32Array;
     public positionY: Float32Array;
     public velocityX: Float32Array;
@@ -16,6 +18,13 @@ export class PhysicsMemory {
     public floatParams: Float32Array;
 
     // Layout constants
+    //
+    // `flags` (Int32Array) and `floatParams` (Float32Array) are two views over the SAME 256-slot
+    // region at the tail of the buffer. A slot therefore has exactly one meaning - integer OR float -
+    // and the two view types must never both claim the same index. Reserved allocation:
+    //   int slots   {0, 10, 11}      - status flag + worker heartbeat/timing counters
+    //   float slots {1..9, 12..14}   - physics params + worker param passthrough
+    // Adding a new slot means picking an index outside both used sets, in the correct view.
     static readonly FLAG_STATUS = 0; // 0: IDLE, 1: COMPUTING
     static readonly STATUS_IDLE = 0;
     static readonly STATUS_COMPUTING = 1;
@@ -34,34 +43,42 @@ export class PhysicsMemory {
         const totalBytes = float32Count * 4 + flagsCount * 4;
 
         if (existingSab) {
-            this.sab = existingSab;
+            this.buffer = existingSab;
+            this.isShared = true;
+        } else if (typeof SharedArrayBuffer === 'undefined' || typeof crossOriginIsolated === 'undefined' || !crossOriginIsolated) {
+            // No cross-origin isolation: fall back to a plain ArrayBuffer. Every non-worker engine
+            // works on it (Atomics.load/store/add operate on non-shared buffers); only Atomics.wait
+            // requires shared memory, and that runs solely in the worker (gated on isShared).
+            this.buffer = new ArrayBuffer(totalBytes);
+            this.isShared = false;
         } else {
-            this.sab = new SharedArrayBuffer(totalBytes);
+            this.buffer = new SharedArrayBuffer(totalBytes);
+            this.isShared = true;
         }
 
         let offset = 0;
 
         // Create views (Structure of Arrays)
-        this.positionX = new Float32Array(this.sab, offset, n);
+        this.positionX = new Float32Array(this.buffer, offset, n);
         offset += n * 4;
-        this.positionY = new Float32Array(this.sab, offset, n);
-        offset += n * 4;
-
-        this.velocityX = new Float32Array(this.sab, offset, n);
-        offset += n * 4;
-        this.velocityY = new Float32Array(this.sab, offset, n);
+        this.positionY = new Float32Array(this.buffer, offset, n);
         offset += n * 4;
 
-        this.mass = new Float32Array(this.sab, offset, n);
+        this.velocityX = new Float32Array(this.buffer, offset, n);
+        offset += n * 4;
+        this.velocityY = new Float32Array(this.buffer, offset, n);
         offset += n * 4;
 
-        this.colors = new Float32Array(this.sab, offset, n * 3);
+        this.mass = new Float32Array(this.buffer, offset, n);
+        offset += n * 4;
+
+        this.colors = new Float32Array(this.buffer, offset, n * 3);
         offset += n * 3 * 4;
 
         // Flags - Int32 for atomic ops
-        this.flags = new Int32Array(this.sab, offset, 256);
+        this.flags = new Int32Array(this.buffer, offset, 256);
 
-        // Float view of the same flags buffer for passing float parameters
-        this.floatParams = new Float32Array(this.sab, offset, 256);
+        // Float view aliasing the same region - see the layout constants above for the slot map.
+        this.floatParams = new Float32Array(this.buffer, offset, 256);
     }
 }
