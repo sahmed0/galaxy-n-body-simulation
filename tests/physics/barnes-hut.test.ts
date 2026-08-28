@@ -25,7 +25,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BarnesHutEngine, PhysicsState } from '../../src/physics';
 import type { PhysicsParams } from '../../src/physics/types';
-import { pairwiseAccel } from '../../src/physics/kernels';
+import { pairwiseAccel, type Accel } from '../../src/physics/kernels';
 
 /** Deterministic mulberry32 PRNG — keeps the cloud reproducible without the rng util. */
 function mulberry32(seed: number): () => number {
@@ -129,10 +129,11 @@ describe('Barnes-Hut vs brute force — shared pairwise kernel + theta error env
     const refState = makeState(cloud);
     const aBruteX = new Float64Array(N);
     const aBruteY = new Float64Array(N);
+    const acc: Accel = { ax: 0, ay: 0 };
     for (let i = 0; i < N; i++) {
-        const { ax, ay } = pairwiseAccel(refState.positionX, refState.positionY, refState.mass, N, i, G, SOFTENING_SQ);
-        aBruteX[i] = ax;
-        aBruteY[i] = ay;
+        pairwiseAccel(refState.positionX, refState.positionY, refState.mass, N, i, G, SOFTENING_SQ, acc);
+        aBruteX[i] = acc.ax;
+        aBruteY[i] = acc.ay;
     }
 
     // Compute every theta once; share across the assertions below.

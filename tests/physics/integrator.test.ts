@@ -12,7 +12,7 @@
  * Everything runs on plain SoA Float64Arrays driven through the production kernels.
  */
 import { describe, it, expect } from 'vitest';
-import { pairwiseAccel } from '../../src/physics/kernels';
+import { pairwiseAccel, type Accel } from '../../src/physics/kernels';
 import { makeSoA, leapfrogStep, type Body, type SoAState } from '../utils/soa';
 import { eulerStep } from '../utils/euler';
 import {
@@ -32,8 +32,9 @@ function staggerHalfStep(state: SoAState, dt: number): void {
     const { n, px, py, mass, vx, vy } = state;
     const ax = new Float64Array(n);
     const ay = new Float64Array(n);
+    const a: Accel = { ax: 0, ay: 0 };
     for (let i = 0; i < n; i++) {
-        const a = pairwiseAccel(px, py, mass, n, i, G, SOFT_SQ);
+        pairwiseAccel(px, py, mass, n, i, G, SOFT_SQ, a);
         ax[i] = a.ax;
         ay[i] = a.ay;
     }

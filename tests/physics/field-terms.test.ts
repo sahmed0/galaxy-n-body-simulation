@@ -10,7 +10,34 @@
  *      `G·m/r²` for r ≫ ε.
  */
 import { describe, it, expect } from 'vitest';
-import { pairwiseAccel, darkMatterAccel, smbhAccel } from '../../src/physics/kernels';
+import {
+    pairwiseAccel as pairwiseAccelOut,
+    darkMatterAccel as darkMatterAccelOut,
+    smbhAccel as smbhAccelOut,
+    type Accel,
+} from '../../src/physics/kernels';
+
+// The kernels now write into a caller-owned Accel. These thin wrappers allocate that
+// out-param and return it, so the analytic assertions below can read the result
+// directly (per-call allocation is fine in tests).
+function pairwiseAccel(
+    px: ArrayLike<number>, py: ArrayLike<number>, mass: ArrayLike<number>,
+    n: number, i: number, G: number, softeningSq: number,
+): Accel {
+    const out: Accel = { ax: 0, ay: 0 };
+    pairwiseAccelOut(px, py, mass, n, i, G, softeningSq, out);
+    return out;
+}
+function darkMatterAccel(x: number, y: number, dmStrength: number, dmCoreRadius: number): Accel {
+    const out: Accel = { ax: 0, ay: 0 };
+    darkMatterAccelOut(x, y, dmStrength, dmCoreRadius, out);
+    return out;
+}
+function smbhAccel(x: number, y: number, G: number, mass: number, smbhSoftening: number): Accel {
+    const out: Accel = { ax: 0, ay: 0 };
+    smbhAccelOut(x, y, G, mass, smbhSoftening, out);
+    return out;
+}
 
 /** Magnitude of an acceleration. */
 function mag(a: { ax: number; ay: number }): number {

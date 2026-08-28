@@ -4,7 +4,7 @@
  * Analytic two-body / Kepler reference helpers and the conserved diagnostics
  * (energy, angular momentum) the integrator tests measure against.
  */
-import { pairwiseAccel } from '../../src/physics/kernels';
+import { pairwiseAccel, type Accel } from '../../src/physics/kernels';
 import type { SoAState } from './soa';
 
 /**
@@ -94,10 +94,11 @@ export function synchronizedVelocities(
     const { n, px, py, vx, vy, mass } = state;
     const vxs = new Float64Array(n);
     const vys = new Float64Array(n);
+    const acc: Accel = { ax: 0, ay: 0 };
     for (let i = 0; i < n; i++) {
-        const { ax, ay } = pairwiseAccel(px, py, mass, n, i, G, softeningSq);
-        vxs[i] = vx[i] + ax * dt * 0.5;
-        vys[i] = vy[i] + ay * dt * 0.5;
+        pairwiseAccel(px, py, mass, n, i, G, softeningSq, acc);
+        vxs[i] = vx[i] + acc.ax * dt * 0.5;
+        vys[i] = vy[i] + acc.ay * dt * 0.5;
     }
     return { vx: vxs, vy: vys };
 }

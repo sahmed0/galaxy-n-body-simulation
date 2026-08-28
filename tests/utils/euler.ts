@@ -5,7 +5,7 @@
  * leapfrog kernel - the non-symplectic foil. Used only by tests to demonstrate the
  * secular energy growth that leapfrog avoids; there is no production Euler engine.
  */
-import { pairwiseAccel } from '../../src/physics/kernels';
+import { pairwiseAccel, type Accel } from '../../src/physics/kernels';
 import type { SoAState } from './soa';
 
 /**
@@ -30,8 +30,9 @@ export function eulerStep(
     // Snapshot accelerations from the current positions before anything moves.
     const ax = new Float64Array(n);
     const ay = new Float64Array(n);
+    const a: Accel = { ax: 0, ay: 0 };
     for (let i = 0; i < n; i++) {
-        const a = pairwiseAccel(px, py, mass, n, i, G, softeningSq);
+        pairwiseAccel(px, py, mass, n, i, G, softeningSq, a);
         ax[i] = a.ax;
         ay[i] = a.ay;
     }

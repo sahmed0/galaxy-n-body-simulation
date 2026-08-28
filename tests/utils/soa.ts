@@ -11,7 +11,7 @@
  * mask the symplectic property we are trying to verify. Production float32 behaviour
  * stays covered by the green selfgrav/accretion preset tests.
  */
-import { pairwiseAccel, applyKick, applyDrift } from '../../src/physics/kernels';
+import { pairwiseAccel, applyKick, applyDrift, type Accel } from '../../src/physics/kernels';
 
 /** A single body's initial phase-space coordinates + mass. */
 export interface Body {
@@ -71,9 +71,10 @@ export function leapfrogStep(
     softeningSq: number,
 ): void {
     const { n, px, py, vx, vy, mass } = state;
+    const acc: Accel = { ax: 0, ay: 0 };
     for (let i = 0; i < n; i++) {
-        const { ax, ay } = pairwiseAccel(px, py, mass, n, i, G, softeningSq);
-        applyKick(vx, vy, i, ax, ay, dt);
+        pairwiseAccel(px, py, mass, n, i, G, softeningSq, acc);
+        applyKick(vx, vy, i, acc.ax, acc.ay, dt);
     }
     for (let i = 0; i < n; i++) {
         applyDrift(px, py, vx, vy, i, dt);
