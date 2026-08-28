@@ -32,6 +32,10 @@ export class BarnesHutEngine implements SharedStateEngine {
     private srcY: number[] = [];
     private srcM: number[] = [];
 
+    // Reused across every kernel call in a step so the per-body tree walk allocates
+    // nothing in steady state. Safe: each engine steps single-threaded, one call at a time.
+    private scratchAccel: Accel = { ax: 0, ay: 0 };
+
     // No permanent acceleration buffers needed for Leapfrog
     // We calculate acceleration and apply it directly to velocity.
 
@@ -153,9 +157,10 @@ export class BarnesHutEngine implements SharedStateEngine {
         // sources acting on `i`, then the shared `pairwiseAccel` kernel sums them -
         // BH and brute force therefore use the identical pairwise force law, so the
         // only difference under test is the theta tree approximation.
+        const acc = this.scratchAccel;
         for (let i = start; i < n; i++) {
-            const { ax, ay } = this.treeAcceleration(i, G, theta, softeningSq);
-            applyKick(vx, vy, i, ax, ay, dt);
+            this.treeAcceleration(i, G, theta, softeningSq);
+            applyKick(vx, vy, i, acc.ax, acc.ay, dt);
         }
 
         // 2b. Add Central Forces (Dark Matter Halo + Supermassive Black Hole), via
@@ -167,14 +172,15 @@ export class BarnesHutEngine implements SharedStateEngine {
             const dmCoreRadius = params.dmCoreRadius || 50.0;
             const smbhSoftening = params.blackHoleSoftening || params.softening;
 
+            const acc = this.scratchAccel;
             for (let i = start; i < n; i++) {
                 if (dmStrength > 0) {
-                    const { ax, ay } = darkMatterAccel(px[i], py[i], dmStrength, dmCoreRadius);
-                    applyKick(vx, vy, i, ax, ay, dt);
+                    darkMatterAccel(px[i], py[i], dmStrength, dmCoreRadius, acc);
+                    applyKick(vx, vy, i, acc.ax, acc.ay, dt);
                 }
                 if (smbhMass > 0) {
-                    const { ax, ay } = smbhAccel(px[i], py[i], G, smbhMass, smbhSoftening);
-                    applyKick(vx, vy, i, ax, ay, dt);
+                    smbhAccel(px[i], py[i], G, smbhMass, smbhSoftening, acc);
+                    applyKick(vx, vy, i, acc.ax, acc.ay, dt);
                 }
             }
         }
@@ -189,10 +195,10 @@ export class BarnesHutEngine implements SharedStateEngine {
     /**
      * Tree-walk acceleration on body `i`: collects every source acting on it (each
      * body in a leaf, or an accepted internal node's COM pseudo-body) into the reused
-     * scratch buffers, then returns the Newtonian sum via the shared `pairwiseAccel`
-     * kernel. Returns acceleration only (no dt); the integrator applies dt.
+     * scratch buffers, then writes the Newtonian sum into `this.scratchAccel` via the
+     * shared `pairwiseAccel` kernel. Acceleration only (no dt); the integrator applies dt.
      */
-    private treeAcceleration(i: number, G: number, theta: number, softeningSq: number): Accel {
+    private treeAcceleration(i: number, G: number, theta: number, softeningSq: number): void {
         const sx = this.srcX, sy = this.srcY, sm = this.srcM;
         sx.length = 0;
         sy.length = 0;
@@ -204,7 +210,7 @@ export class BarnesHutEngine implements SharedStateEngine {
 
         this.collectSources(i, this.root!, theta, softeningSq);
 
-        return pairwiseAccel(sx, sy, sm, sx.length, 0, G, softeningSq);
+        pairwiseAccel(sx, sy, sm, sx.length, 0, G, softeningSq, this.scratchAccel);
     }
 
     /**

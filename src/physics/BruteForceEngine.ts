@@ -3,7 +3,7 @@
  */
 import { PhysicsState } from './PhysicsState';
 import type { SharedStateEngine, PhysicsParams, InitialConditionType } from './types';
-import { pairwiseAccel, darkMatterAccel, smbhAccel, applyKick, applyDrift } from './kernels';
+import { pairwiseAccel, darkMatterAccel, smbhAccel, applyKick, applyDrift, type Accel } from './kernels';
 
 /**
  * Handles the physics simulation for the N-body system.
@@ -16,6 +16,10 @@ import { pairwiseAccel, darkMatterAccel, smbhAccel, applyKick, applyDrift } from
 export class BruteForceEngine implements SharedStateEngine {
     public readonly kind = 'shared-state' as const;
     public state!: PhysicsState;
+
+    // Reused across every kernel call in a step so the O(N²) force loop allocates
+    // nothing in steady state. Safe: each engine steps single-threaded, one call at a time.
+    private scratchAccel: Accel = { ax: 0, ay: 0 };
 
     /**
      * Adopts the given state as the engine's working set.
@@ -107,9 +111,10 @@ export class BruteForceEngine implements SharedStateEngine {
             const hx = px.subarray(start, activeCount);
             const hy = py.subarray(start, activeCount);
             const hm = mass.subarray(start, activeCount);
+            const acc = this.scratchAccel;
             for (let k = 0; k < hn; k++) {
-                const { ax, ay } = pairwiseAccel(hx, hy, hm, hn, k, G, softeningSq);
-                applyKick(vx, vy, k + start, ax, ay, dt);
+                pairwiseAccel(hx, hy, hm, hn, k, G, softeningSq, acc);
+                applyKick(vx, vy, k + start, acc.ax, acc.ay, dt);
             }
         }
 
@@ -138,9 +143,10 @@ export class BruteForceEngine implements SharedStateEngine {
         const dmStrength = params.dmStrength || 0;
         if (dmStrength > 0) {
             const dmCoreRadius = params.dmCoreRadius || 50.0;
+            const acc = this.scratchAccel;
             for (let i = start; i < n; i++) {
-                const { ax, ay } = darkMatterAccel(px[i], py[i], dmStrength, dmCoreRadius);
-                applyKick(vx, vy, i, ax, ay, dt);
+                darkMatterAccel(px[i], py[i], dmStrength, dmCoreRadius, acc);
+                applyKick(vx, vy, i, acc.ax, acc.ay, dt);
             }
         }
 
@@ -149,9 +155,10 @@ export class BruteForceEngine implements SharedStateEngine {
         if (smbhMass > 0) {
             const smbhSoftening = params.blackHoleSoftening || params.softening;
             // Index 0 is the BH itself (pinned at origin); skip it via `start`.
+            const acc = this.scratchAccel;
             for (let i = start; i < n; i++) {
-                const { ax, ay } = smbhAccel(px[i], py[i], G, smbhMass, smbhSoftening);
-                applyKick(vx, vy, i, ax, ay, dt);
+                smbhAccel(px[i], py[i], G, smbhMass, smbhSoftening, acc);
+                applyKick(vx, vy, i, acc.ax, acc.ay, dt);
             }
         }
     }

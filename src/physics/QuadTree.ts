@@ -72,7 +72,8 @@ export class QuadTree {
         this.northeast = null;
         this.southwest = null;
         this.southeast = null;
-        this.points = [];
+        // Truncate rather than reassign so pooled nodes keep their backing array.
+        this.points.length = 0;
         this.divided = false;
 
         // Return to pool if space available
@@ -90,7 +91,8 @@ export class QuadTree {
     private reset(boundary: Boundary, capacity: number): void {
         this.boundary = boundary;
         this.capacity = capacity;
-        this.points = [];
+        // Truncate rather than reassign so pooled nodes keep their backing array.
+        this.points.length = 0;
         this.divided = false;
         this.northwest = null;
         this.northeast = null;
@@ -287,7 +289,8 @@ export class QuadTree {
      * Zeroes structural data without freeing the object back to the pooling arrays.
      */
     clear(): void {
-        this.points = [];
+        // Truncate rather than reassign so pooled nodes keep their backing array.
+        this.points.length = 0;
         this.divided = false;
         this.northwest = null;
         this.northeast = null;

@@ -7,9 +7,13 @@
  * call these so the only thing differing between backends is the spatial
  * approximation, never the force formula.
  *
- * Design rule (non-negotiable): kernels return **acceleration** - no `dt`, no
+ * Design rule (non-negotiable): kernels produce **acceleration** - no `dt`, no
  * `mass[i]` factor folded in. The integrator applies `dt` separately via
  * {@link applyKick}/{@link applyDrift}. This lets tests compare accelerations directly.
+ *
+ * The force kernels write into a caller-owned {@link Accel} (`out`) rather than
+ * returning a fresh object, so the per-step tree walk / O(N²) loop allocates
+ * nothing in steady state. Each call **overwrites** `out.ax`/`out.ay`.
  *
  * Read-only position/mass arrays are typed {@link ArrayLike} so the same kernel
  * serves production (`Float32Array`) and the analytic tests (`Float64Array`).
@@ -26,8 +30,8 @@ export type MutableFloatArray = Float32Array | Float64Array | number[];
 
 /**
  * Newton pairwise gravitational acceleration on body `i` from all other bodies
- * `j ∈ [0, n), j ≠ i`, with Plummer softening. Returns the **acceleration** on `i`
- * (no `dt`, no `mass[i]` factor).
+ * `j ∈ [0, n), j ≠ i`, with Plummer softening. Writes the **acceleration** on `i`
+ * into `out` (no `dt`, no `mass[i]` factor).
  *
  * Per pair: `distSq = dx² + dy² + softeningSq`, `dist = √distSq`,
  * `inv = G·mass[j] / (distSq·dist)`, contributing `inv·dx`, `inv·dy`. Sums are
@@ -40,7 +44,7 @@ export type MutableFloatArray = Float32Array | Float64Array | number[];
  * @param i - Index of the body the acceleration is computed for.
  * @param G - Gravitational constant.
  * @param softeningSq - Squared Plummer softening length (ε²).
- * @returns The acceleration `{ax, ay}` on body `i`.
+ * @param out - Overwritten with the acceleration `{ax, ay}` on body `i`.
  */
 export function pairwiseAccel(
     px: ArrayLike<number>,
@@ -50,7 +54,8 @@ export function pairwiseAccel(
     i: number,
     G: number,
     softeningSq: number,
-): Accel {
+    out: Accel,
+): void {
     const xi = px[i];
     const yi = py[i];
     let ax = 0;
@@ -65,13 +70,14 @@ export function pairwiseAccel(
         ax += inv * dx;
         ay += inv * dy;
     }
-    return { ax, ay };
+    out.ax = ax;
+    out.ay = ay;
 }
 
 /**
  * Dark-matter halo acceleration on a body at `(x, y)`: an isothermal halo pulling
  * inward toward the origin. Magnitude `dmStrength² · r / (r² + rcore²)`, directed
- * along `-r̂`. Returns the **acceleration** (no `dt`).
+ * along `-r̂`. Writes the **acceleration** into `out` (no `dt`).
  *
  * The radial `dist` cancels analytically, leaving only squared terms (no sqrt):
  * `aBase = dmStrength² / (r² + rcore²)`, contributing `-x·aBase`, `-y·aBase`.
@@ -80,23 +86,25 @@ export function pairwiseAccel(
  * @param y - Y position.
  * @param dmStrength - Halo velocity scale (asymptotic circular speed).
  * @param dmCoreRadius - Core radius `rcore` softening the centre.
- * @returns The inward acceleration `{ax, ay}`.
+ * @param out - Overwritten with the inward acceleration `{ax, ay}`.
  */
 export function darkMatterAccel(
     x: number,
     y: number,
     dmStrength: number,
     dmCoreRadius: number,
-): Accel {
+    out: Accel,
+): void {
     const distSq = x * x + y * y;
     const aBase = (dmStrength * dmStrength) / (distSq + dmCoreRadius * dmCoreRadius);
-    return { ax: -x * aBase, ay: -y * aBase };
+    out.ax = -x * aBase;
+    out.ay = -y * aBase;
 }
 
 /**
  * Supermassive-black-hole central acceleration on a body at `(x, y)` from a point
  * mass at the origin, with Plummer softening. Magnitude `G·M / (r² + ε²)^{3/2} · r`,
- * directed inward along `-r̂`. Returns the **acceleration** (no `dt`).
+ * directed inward along `-r̂`. Writes the **acceleration** into `out` (no `dt`).
  *
  * `distSq = r² + ε²`, `dist = √distSq`, `aBase = G·M / (distSq·dist)`, contributing
  * `-x·aBase`, `-y·aBase`. As `ε → 0` this is Keplerian: `|a|·r² → G·M`.
@@ -106,7 +114,7 @@ export function darkMatterAccel(
  * @param G - Gravitational constant.
  * @param mass - Central black-hole mass `M`.
  * @param smbhSoftening - Plummer softening length `ε`.
- * @returns The inward acceleration `{ax, ay}`.
+ * @param out - Overwritten with the inward acceleration `{ax, ay}`.
  */
 export function smbhAccel(
     x: number,
@@ -114,11 +122,13 @@ export function smbhAccel(
     G: number,
     mass: number,
     smbhSoftening: number,
-): Accel {
+    out: Accel,
+): void {
     const distSq = x * x + y * y + smbhSoftening * smbhSoftening;
     const dist = Math.sqrt(distSq);
     const aBase = (G * mass) / (distSq * dist);
-    return { ax: -x * aBase, ay: -y * aBase };
+    out.ax = -x * aBase;
+    out.ay = -y * aBase;
 }
 
 /**
