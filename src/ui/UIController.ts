@@ -87,6 +87,15 @@ export function setupUI(sim: SimulationManager) {
     const darkMatterVal = elOrNull<HTMLElement>('ui-dark-matter-value');
     const showGridCheckbox = elOrNull<HTMLInputElement>('ui-show-grid');
 
+    // The quadtree overlay toggle is only meaningful for Barnes-Hut. Own its visibility
+    // here (the state layer no longer touches the DOM to update it).
+    const quadTreeGroup = elOrNull<HTMLElement>('ui-quadtree-group');
+    const updateQuadTreeVisibility = (engineType: EngineType) => {
+        if (quadTreeGroup) {
+            quadTreeGroup.style.display = engineType === 'barnes' ? 'flex' : 'none';
+        }
+    };
+
     engineSelect.value = sim.params.engineType;
     if (presetSelect) presetSelect.value = sim.params.preset;
 
@@ -99,6 +108,7 @@ export function setupUI(sim: SimulationManager) {
     sim.onEngineFallback = (reason: string) => {
         disableGpuOption(engineSelect);
         engineSelect.value = sim.params.engineType;
+        updateQuadTreeVisibility(sim.params.engineType);
         showBanner(reason);
     };
     starsInput.value = sim.params.count.toString();
@@ -109,10 +119,7 @@ export function setupUI(sim: SimulationManager) {
     if (darkMatterVal) darkMatterVal.textContent = sim.params.dmStrength.toFixed(0);
     if (showGridCheckbox) showGridCheckbox.checked = sim.params.shouldShowQuadTree;
 
-    const quadTreeGroup = document.getElementById('ui-quadtree-group');
-    if (quadTreeGroup) {
-        quadTreeGroup.style.display = sim.params.engineType === 'barnes' ? 'flex' : 'none';
-    }
+    updateQuadTreeVisibility(sim.params.engineType);
 
     engineSelect.addEventListener('change', async (e) => {
         const target = e.target as HTMLSelectElement;
@@ -132,6 +139,7 @@ export function setupUI(sim: SimulationManager) {
         }
 
         sim.params.engineType = newType;
+        updateQuadTreeVisibility(newType);
         await sim.switchEngine(newType);
         if (clamped) await sim.restart();
     });

@@ -68,6 +68,23 @@ async function startApp() {
   // Set telemetry callback before init so it's ready, but it's used in loop
   simManager.onTelemetry = updateTelemetry;
 
+  // Parallax the background canvas against the camera each frame. Kept in the entry
+  // layer (not SimulationManager) so the state layer never touches the DOM.
+  const bgCanvas = document.getElementById('bg-canvas');
+  if (bgCanvas) {
+    simManager.onFrame = (sim) => {
+      const camera = sim.renderer.camera;
+      const pPanFactor = 0.05;
+      const pZoomFactor = 0.15;
+      let bgScale = 1.0 + (camera.zoom - 1.0) * pZoomFactor;
+      if (bgScale < 0.83) bgScale = 0.83;
+
+      const bgX = camera.x * pPanFactor;
+      const bgY = camera.y * camera.tilt * pPanFactor;
+      bgCanvas.style.transform = `translate(${bgX}px, ${bgY}px) scale(${bgScale})`;
+    };
+  }
+
   await simManager.init(CANVAS_ID);
 
   setupUI(simManager);

@@ -256,6 +256,13 @@ export class SimulationManager {
      */
     onEngineFallback: (reason: string) => void = () => { };
 
+    /**
+     * Called once per render loop iteration, after the camera updates. Lets the entry
+     * layer drive DOM-facing effects (e.g. the parallax background) without the state
+     * layer touching the DOM itself.
+     */
+    onFrame: ((sim: SimulationManager) => void) | null = null;
+
     animationFrameId: number = 0;
     frames = 0;
     lastTelemetryUpdate = 0;
@@ -1407,11 +1414,6 @@ export class SimulationManager {
      * @param type - The target engine's string identifier.
      */
     async switchEngine(type: EngineType) {
-        const quadTreeGroup = document.getElementById('ui-quadtree-group');
-        if (quadTreeGroup) {
-            quadTreeGroup.style.display = type === 'barnes' ? 'flex' : 'none';
-        }
-
         const preset = presetFor(type);
         this.params.theta = preset.theta;
         this.params.softening = preset.softening;
@@ -1540,17 +1542,9 @@ export class SimulationManager {
 
         this.renderer.camera.update();
 
-        const bgCanvas = document.getElementById('bg-canvas');
-        if (bgCanvas) {
-            const pPanFactor = 0.05;
-            const pZoomFactor = 0.15;
-            let bgScale = 1.0 + (this.renderer.camera.zoom - 1.0) * pZoomFactor;
-            if (bgScale < 0.83) bgScale = 0.83;
-
-            const bgX = this.renderer.camera.x * pPanFactor;
-            const bgY = (this.renderer.camera.y * this.renderer.camera.tilt) * pPanFactor;
-            bgCanvas.style.transform = `translate(${bgX}px, ${bgY}px) scale(${bgScale})`;
-        }
+        // Let the entry layer drive DOM-facing per-frame effects (parallax background)
+        // so the state layer stays DOM-free.
+        this.onFrame?.(this);
 
         this.renderer.massThreshold = this.params.massThreshold;
         this.renderer.showQuadTree = this.params.shouldShowQuadTree;
