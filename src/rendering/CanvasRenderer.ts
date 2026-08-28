@@ -41,6 +41,15 @@ export class CanvasRenderer {
     public quadTree: QuadTree | null = null;
 
     /**
+     * Particle indices grouped by (quantized) CSS colour, so `fillStyle` is set once
+     * per colour instead of once per particle. Colours are static after `initGalaxy`.
+     */
+    private groups: Map<string, number[]> = new Map();
+
+    /** The state the colour groups were built from; a restart replaces the state, triggering a rebuild. */
+    private groupsState: PhysicsState | null = null;
+
+    /**
      * Initialises the canvas renderer with a given canvas ID and physics state.
      * 
      * @param canvasId The DOM ID of the target canvas element.
@@ -107,6 +116,31 @@ export class CanvasRenderer {
     }
 
     /**
+     * (Re)builds the colour-index groups from the current state. Colours are written
+     * only by `initGalaxy`, so this runs once per state object (per restart), not per
+     * frame. Each channel is quantized to 4 bits, bounding distinct fillStyle values
+     * (and CSS strings) at 4096 while preserving the visible palette. Index 0 (the BH
+     * glow) is excluded; it is drawn separately.
+     */
+    private buildGroups(): void {
+        this.groups.clear();
+        const colors = this.state.colors;
+        const n = this.state.n;
+        for (let i = 1; i < n; i++) {
+            const r = (Math.floor(colors[i * 3 + 0] * 255) >> 4) << 4;
+            const g = (Math.floor(colors[i * 3 + 1] * 255) >> 4) << 4;
+            const b = (Math.floor(colors[i * 3 + 2] * 255) >> 4) << 4;
+            const key = `rgb(${r},${g},${b})`;
+            let group = this.groups.get(key);
+            if (!group) {
+                group = [];
+                this.groups.set(key, group);
+            }
+            group.push(i);
+        }
+    }
+
+    /**
      * Renders the current frame by clearing the canvas and painting all particles and optional debug data.
      */
     public render(): void {
@@ -163,19 +197,28 @@ export class CanvasRenderer {
         }
 
         // --- PER-PARTICLE RENDERER START ---
-        for (let i = 1; i < n; i++) {
-            const r = Math.floor(this.state.colors[i * 3 + 0] * 255);
-            const g = Math.floor(this.state.colors[i * 3 + 1] * 255);
-            const b = Math.floor(this.state.colors[i * 3 + 2] * 255);
+        // Rebuild colour groups only when the state object changes (a restart replaces
+        // it); colours are otherwise static. Grouping sets fillStyle once per colour.
+        if (this.state !== this.groupsState) {
+            this.buildGroups();
+            this.groupsState = this.state;
+        }
 
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-
-            if (this.state.mass[i] >= this.massThreshold) {
-                // Draw 2x2 rect for heavy stars centered at x,y
-                ctx.fillRect(px[i] - 1, py[i] - 1, 2, 2);
-            } else {
-                // Draw 1x1 rect for light stars at x,y
-                ctx.fillRect(px[i], py[i], 1.7, 1.7);
+        // Additive blending is commutative, so iterating groups (rather than index
+        // order) leaves the composited image unchanged. The heavy/light size branch
+        // reads mass/threshold live, so a runtime threshold change still takes effect.
+        const mass = this.state.mass;
+        for (const [color, indices] of this.groups) {
+            ctx.fillStyle = color;
+            for (let k = 0; k < indices.length; k++) {
+                const i = indices[k];
+                if (mass[i] >= this.massThreshold) {
+                    // Draw 2x2 rect for heavy stars centered at x,y
+                    ctx.fillRect(px[i] - 1, py[i] - 1, 2, 2);
+                } else {
+                    // Draw 1x1 rect for light stars at x,y
+                    ctx.fillRect(px[i], py[i], 1.7, 1.7);
+                }
             }
         }
         // --- PER-PARTICLE RENDERER END ---
