@@ -28,6 +28,12 @@ export class PhysicsMemory {
     static readonly FLAG_STATUS = 0; // 0: IDLE, 1: COMPUTING
     static readonly STATUS_IDLE = 0;
     static readonly STATUS_COMPUTING = 1;
+    // Worker heartbeat/timing counters (int view) and param passthrough (float view).
+    static readonly FLAG_STEPS_DONE = 10;          // int: monotonic count of completed steps
+    static readonly FLAG_STEP_US = 11;             // int: duration of last step, microseconds
+    static readonly PARAM_ACTIVE_COUNT = 12;       // float: activeCount passed to the worker step
+    static readonly PARAM_USE_ACTIVE_PASSIVE = 13; // float: useActivePassive flag (0/1)
+    static readonly PARAM_INTERACTIONS = 14;       // float: reserved
 
     /**
      * Evaluates total sizes based on array constants and aligns TypedArrays 
