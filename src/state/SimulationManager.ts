@@ -1606,23 +1606,27 @@ export class SimulationManager {
         this.renderer.massThreshold = this.params.massThreshold;
         this.renderer.showQuadTree = this.params.shouldShowQuadTree;
 
+        const onWorker = this.engine === this.workerBridge && this.workerBridge !== null;
+
+        // Worker read-gate + ordering: the worker mutates the shared arrays for the
+        // whole duration of a step, and a step can take longer than one display frame.
+        // We must paint the last *completed* frame BEFORE advancePhysics arms the next
+        // step - otherwise arming flips the status to COMPUTING and the read-gate below
+        // would skip every paint, so physics would advance invisibly (a frozen view).
+        // Painting only while idle also keeps the read-gate's anti-tearing guarantee.
+        if (onWorker && !this.workerBridge!.isBusy()) {
+            this.renderer.quadTree = null;
+            this.renderer.render();
+        }
+
         // --- Physics: advance in fixed dt increments proportional to real time ---
         // This keeps the simulation evolving at the same wall-clock rate regardless
         // of the display refresh rate, while preserving the integrator's fixed dt.
         if (!this.params.isPaused) {
-            this.accumulator += frameSeconds;
-            const dt = this.params.dt;
-            let steps = 0;
-            while (this.accumulator >= dt && steps < SimulationManager.MAX_SUBSTEPS) {
-                this.engine.step(dt, this.params);
-                this.accumulator -= dt;
-                steps++;
-            }
-            // If we hit the cap and are still behind, drop the backlog rather than spiral.
-            if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
+            this.advancePhysics(frameSeconds);
         }
 
-        // --- Presentation: the one discriminant branch ---
+        // --- Presentation: the one discriminant branch (worker painted above) ---
         if (this.engine.kind === 'self-rendering') {
             // Keep GPU camera uniforms in sync (needed while paused too).
             this.params.cameraZoom = this.renderer.camera.zoom;
@@ -1630,7 +1634,7 @@ export class SimulationManager {
             this.params.cameraY = this.renderer.camera.y;
             this.params.cameraTilt = this.renderer.camera.tilt;
             this.engine.render(this.params);
-        } else {
+        } else if (!onWorker) {
             if (this.params.engineType === 'barnes') {
                 this.renderer.quadTree = (this.engine as BarnesHutEngine).root || null;
             } else {
