@@ -32,6 +32,19 @@ function disableGpuOption(select: HTMLSelectElement) {
 }
 
 /**
+ * Disables the worker engine option when cross-origin isolation is absent (no
+ * SharedArrayBuffer, so the worker's Atomics.wait cannot run), annotating why.
+ * @param select - The engine <select> element.
+ */
+function disableWorkerOption(select: HTMLSelectElement) {
+    const workerOption = select.querySelector('option[value="worker"]') as HTMLOptionElement | null;
+    if (workerOption) {
+        workerOption.disabled = true;
+        workerOption.textContent += ' (needs cross-origin isolation)';
+    }
+}
+
+/**
  * Shows a transient, dismissable banner. Reuses a single banner element so repeated
  * notices replace rather than stack. Used for engine fallbacks, star-count clamps, and
  * will be used for share-link and worker-fallback notices.
@@ -104,6 +117,12 @@ export function setupUI(sim: SimulationManager) {
     if (!sim.webGpuAvailable) {
         disableGpuOption(engineSelect);
         showBanner('WebGPU unavailable - running CPU Barnes-Hut');
+    }
+
+    // The worker engine needs SharedArrayBuffer, which requires cross-origin isolation.
+    // Guard the global read with typeof so it doesn't throw under the test DOM.
+    if (typeof crossOriginIsolated !== 'undefined' && !crossOriginIsolated) {
+        disableWorkerOption(engineSelect);
     }
     sim.onEngineFallback = (reason: string) => {
         disableGpuOption(engineSelect);
@@ -318,5 +337,15 @@ export function updateTelemetry(fps: number, sim: SimulationManager) {
         if (gpuMemEl) gpuMemEl.innerText = sim.webGpuEngine.getMemoryUsageMB().toFixed(2) + ' MB';
     } else {
         gpuRows.forEach((el) => (el as HTMLElement).style.display = 'none');
+    }
+
+    // Worker step time: shown only while the off-thread engine is active.
+    const workerRows = document.querySelectorAll('.worker-row');
+    if (sim.workerBridge && sim.engine === sim.workerBridge) {
+        workerRows.forEach((el) => (el as HTMLElement).style.display = 'flex');
+        const workerStepEl = document.getElementById('tel-worker-step');
+        if (workerStepEl) workerStepEl.innerText = sim.workerBridge.getLastStepMs().toFixed(2) + ' ms';
+    } else {
+        workerRows.forEach((el) => (el as HTMLElement).style.display = 'none');
     }
 }

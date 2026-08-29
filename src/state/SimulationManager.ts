@@ -306,6 +306,11 @@ export class SimulationManager {
     private accumulator = 0;
     private static readonly MAX_SUBSTEPS = 5;
 
+    // Completed-step count last observed from the worker. Simulated time is debited
+    // only by the growth of this value, so steps the worker drops while busy never
+    // advance the clock. Reset to 0 whenever a fresh WorkerBridge is created.
+    private workerStepsSeen = 0;
+
     /**
      * Callback triggered periodically to report simulation performance metrics.
      * @param fps - The calculated frames per second over the last telemetry interval.
@@ -1476,9 +1481,18 @@ export class SimulationManager {
 
             this.engine = this.webGpuEngine;
         } else if (type === 'worker') {
+            if (!this.memory.isShared) {
+                // No cross-origin isolation: SharedArrayBuffer (and the worker's
+                // Atomics.wait) is unavailable. Fall back to main-thread Barnes-Hut.
+                this.params.engineType = 'barnes';
+                this.engine = new BarnesHutEngine(this.state);
+                this.onEngineFallback('Worker engine requires cross-origin isolation - running main-thread Barnes-Hut');
+                return;
+            }
             if (!this.workerBridge) {
                 this.workerBridge = new WorkerBridge(this.memory);
             }
+            this.workerStepsSeen = 0;
             this.engine = this.workerBridge;
         } else {
             this.engine = new BarnesHutEngine(this.state);
@@ -1523,6 +1537,51 @@ export class SimulationManager {
         // above (loop() only assigns animationFrameId at its tail), don't start a
         // second independent loop chain.
         if (!this.animationFrameId) this.loop();
+    }
+
+    /**
+     * Advances the physics by the real time elapsed this frame, in fixed dt steps.
+     *
+     * Inline engines (brute/barnes/webgpu) run the fixed-timestep substep loop directly.
+     * The worker engine runs a step off-thread, so instead of stepping here we account
+     * for the steps it has *completed* and kick off at most one new step per frame:
+     * simulated time is debited only by the growth of the worker's completed-step
+     * counter, so a step dropped while the worker is busy never advances the clock and
+     * the two threads stay in sync.
+     *
+     * Split out of {@link loop} so the accounting is unit-testable without a rAF loop.
+     * @param frameSeconds - Real seconds elapsed since the previous frame (already clamped).
+     */
+    advancePhysics(frameSeconds: number) {
+        const dt = this.params.dt;
+
+        if (this.engine === this.workerBridge && this.workerBridge) {
+            const bridge = this.workerBridge;
+            const completed = bridge.getCompletedSteps();
+            this.accumulator += frameSeconds;
+            // Debit only work the worker has actually finished since we last looked.
+            this.accumulator -= dt * (completed - this.workerStepsSeen);
+            this.workerStepsSeen = completed;
+            if (this.accumulator < 0) this.accumulator = 0;
+            // Drop backlog rather than let it spiral after a stall.
+            const maxBacklog = dt * SimulationManager.MAX_SUBSTEPS;
+            if (this.accumulator > maxBacklog) this.accumulator = maxBacklog;
+            // One in-flight step per frame is the intended cadence; do not loop.
+            if (this.accumulator >= dt && !bridge.isBusy()) {
+                bridge.step(dt, this.params);
+            }
+            return;
+        }
+
+        this.accumulator += frameSeconds;
+        let steps = 0;
+        while (this.accumulator >= dt && steps < SimulationManager.MAX_SUBSTEPS) {
+            this.engine.step(dt, this.params);
+            this.accumulator -= dt;
+            steps++;
+        }
+        // If we hit the cap and are still behind, drop the backlog rather than spiral.
+        if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
     }
 
     /**

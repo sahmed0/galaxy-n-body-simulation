@@ -47,6 +47,7 @@
             <select id="ui-engine" class="tactical-select">
                 <option value="brute">CPU: Brute Force</option>
                 <option value="barnes">CPU: Barnes-Hut</option>
+                <option value="worker">CPU: Barnes-Hut (Worker)</option>
                 <option value="webgpu">GPU: WebGPU</option>
             </select>
         </div>
@@ -119,6 +120,10 @@
         <div class="telemetry-row gpu-row" style="display: none;">
             <span class="telemetry-label">GPU MEMORY</span>
             <span id="tel-gpu-mem" class="telemetry-value">-- MB</span>
+        </div>
+        <div class="telemetry-row worker-row" style="display: none;">
+            <span class="telemetry-label">WORKER STEP</span>
+            <span id="tel-worker-step" class="telemetry-value">-- ms</span>
         </div>
         <div id="sim-info">
             <a href="https://sajidahmed.co.uk" target="_blank" rel="noopener"><i class="kiwi-logo"></i></a>
