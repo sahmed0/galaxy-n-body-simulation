@@ -22,23 +22,21 @@ export interface EnginePreset {
 }
 
 /**
- * Preset configuration values for different physics engines. The worker engine has
- * no entry yet (have plan to add one); until then it shares the Barnes-Hut preset via
- * {@link presetFor}.
+ * Preset configuration values for different physics engines. The worker engine runs
+ * the same Barnes-Hut algorithm off-thread, so it shares the Barnes-Hut values.
  */
-export const ENGINE_PRESETS: Record<Exclude<EngineType, 'worker'>, EnginePreset> = {
+export const ENGINE_PRESETS: Record<EngineType, EnginePreset> = {
     brute: { theta: 0.0, softening: 1.0, timeStep: 0.016 },
     barnes: { theta: 1.0, softening: 1.0, timeStep: 0.016 },
-    webgpu: { theta: 0.0, softening: 1.0, timeStep: 0.016 }
+    webgpu: { theta: 0.0, softening: 1.0, timeStep: 0.016 },
+    worker: { theta: 1.0, softening: 1.0, timeStep: 0.016 }
 };
 
 /**
- * Resolves the preset for any engine type. The worker path is not yet in
- * {@link ENGINE_PRESETS}, so it falls back to the Barnes-Hut preset (it runs the
- * same algorithm off-thread) until it gets its own entry.
+ * Resolves the preset for a given engine type.
  */
 export function presetFor(type: EngineType): EnginePreset {
-    return type === 'worker' ? ENGINE_PRESETS.barnes : ENGINE_PRESETS[type];
+    return ENGINE_PRESETS[type];
 }
 
 /**
