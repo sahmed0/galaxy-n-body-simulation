@@ -36,3 +36,40 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    # Playwright builds the app, starts a preview server and drives Chromium, so it
+    # needs more headroom than the unit suite - but still bounded to free the runner.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      - name: Install
+        run: pnpm install
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run e2e smoke tests
+        run: pnpm e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
