@@ -9,6 +9,9 @@ export default defineConfig({
         // fallback bookkeeping and the UI banner/notification code paths.
         environment: 'happy-dom',
         include: ['src/**/*.{test,spec}.ts', 'tests/**/*.test.ts'],
+        // Playwright specs live under e2e/ and are driven by `pnpm e2e`, never Vitest.
+        // They import from @playwright/test, which would error under this runner.
+        exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
         // The self-gravitating stepping tests are CPU-heavy and run noticeably
         // slower under v8 coverage instrumentation in CI, so give them headroom
         // beyond Vitest's 5s default to avoid spurious timeouts.

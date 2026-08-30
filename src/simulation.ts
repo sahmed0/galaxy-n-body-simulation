@@ -87,6 +87,10 @@ async function startApp() {
 
   await simManager.init(CANVAS_ID);
 
+  // Expose the manager for the Playwright smoke tests (and handy for manual console
+  // debugging). Deliberate and inert - nothing in the app reads it back.
+  (window as unknown as { __sim: SimulationManager }).__sim = simManager;
+
   setupUI(simManager);
   setupInteractions(simManager);
 
