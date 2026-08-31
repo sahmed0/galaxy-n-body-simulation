@@ -3,3 +3,4 @@
  */
 export * from './colorUtils';
 export * from './dom';
+export * from './format';

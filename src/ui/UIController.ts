@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { SimulationManager, presetDmDefault, ENGINE_MAX_COUNT } from '../state';
-import { el, elOrNull } from '../utils';
+import { el, elOrNull, formatRate } from '../utils';
 import type { EngineType } from '../physics';
 
 /** Narrows a raw `<select>` value to a valid {@link EngineType}. */
@@ -313,11 +313,12 @@ export function setupUI(sim: SimulationManager) {
  */
 export function updateTelemetry(fps: number, sim: SimulationManager) {
     const fpsEl = document.getElementById('tel-fps');
+    const interactionsEl = document.getElementById('tel-interactions');
     const gflopsEl = document.getElementById('tel-gflops');
     const gpuDispatchEl = document.getElementById('tel-gpu-dispatch');
     const gpuMemEl = document.getElementById('tel-gpu-mem');
 
-    if (!fpsEl || !gflopsEl) return;
+    if (!fpsEl || !interactionsEl) return;
 
     fpsEl.innerText = fps.toFixed(1);
     fpsEl.className = 'telemetry-value';
@@ -325,15 +326,33 @@ export function updateTelemetry(fps: number, sim: SimulationManager) {
     else if (fps >= 30) fpsEl.classList.add('tel-warning');
     else fpsEl.classList.add('tel-critical');
 
-    const gflops = (sim.params.activeCount * sim.params.count * 2 * fps) / 1e9;
-    gflopsEl.innerText = gflops.toFixed(2) + ' GFLOPs';
+    // Honest interaction rate: exact per-step pairwise count × physics steps/s.
+    const interactionsPerSecond = (sim.engine.getLastInteractionCount?.() ?? 0) * sim.stepsPerSecond;
+    interactionsEl.innerText = formatRate(interactionsPerSecond);
+
+    const isGpu = !!(sim.webGpuEngine && sim.engine === sim.webGpuEngine);
+    const isBrute = sim.params.engineType === 'brute' && !isGpu;
+
+    // EST. GFLOPS is a dense-kernel convention (20 FLOP per pair); it maps cleanly to
+    // brute force and the GPU, but not to Barnes-Hut tree walks, so hide it there.
+    const gflopsRows = document.querySelectorAll('.gflops-row');
+    if (gflopsEl && (isBrute || isGpu)) {
+        gflopsRows.forEach((el) => (el as HTMLElement).style.display = 'flex');
+        const gflops = (interactionsPerSecond * 20) / 1e9;
+        gflopsEl.innerText = `${gflops.toFixed(2)} (@20 FLOP/pair)`;
+    } else {
+        gflopsRows.forEach((el) => (el as HTMLElement).style.display = 'none');
+    }
 
     const gpuRows = document.querySelectorAll('.gpu-row');
 
-    if (sim.webGpuEngine && sim.engine === sim.webGpuEngine) {
+    if (isGpu && sim.webGpuEngine) {
         gpuRows.forEach((el) => (el as HTMLElement).style.display = 'flex');
 
-        if (gpuDispatchEl) gpuDispatchEl.innerText = sim.webGpuEngine.getLastDispatchTime().toFixed(2) + ' ms';
+        if (gpuDispatchEl) {
+            const pass = sim.webGpuEngine.getLastGpuPassMs();
+            gpuDispatchEl.innerText = `${pass.ms.toFixed(2)} ms (${pass.source === 'timestamp' ? 'ts' : 'approx'})`;
+        }
         if (gpuMemEl) gpuMemEl.innerText = sim.webGpuEngine.getMemoryUsageMB().toFixed(2) + ' MB';
     } else {
         gpuRows.forEach((el) => (el as HTMLElement).style.display = 'none');

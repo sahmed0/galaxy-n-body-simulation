@@ -311,6 +311,12 @@ export class SimulationManager {
     // advance the clock. Reset to 0 whenever a fresh WorkerBridge is created.
     private workerStepsSeen = 0;
 
+    // Physics steps completed within the current telemetry window; flushed to
+    // stepsPerSecond every ~250 ms. Distinct from `frames` (which counts renders).
+    private stepsThisWindow = 0;
+    /** Physics steps per second over the last telemetry window (read by the UI). */
+    stepsPerSecond = 0;
+
     /**
      * Callback triggered periodically to report simulation performance metrics.
      * @param fps - The calculated frames per second over the last telemetry interval.
@@ -1560,7 +1566,9 @@ export class SimulationManager {
             const completed = bridge.getCompletedSteps();
             this.accumulator += frameSeconds;
             // Debit only work the worker has actually finished since we last looked.
-            this.accumulator -= dt * (completed - this.workerStepsSeen);
+            const delta = completed - this.workerStepsSeen;
+            this.accumulator -= dt * delta;
+            this.stepsThisWindow += delta;
             this.workerStepsSeen = completed;
             if (this.accumulator < 0) this.accumulator = 0;
             // Drop backlog rather than let it spiral after a stall.
@@ -1580,6 +1588,7 @@ export class SimulationManager {
             this.accumulator -= dt;
             steps++;
         }
+        this.stepsThisWindow += steps;
         // If we hit the cap and are still behind, drop the backlog rather than spiral.
         if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
     }
@@ -1646,7 +1655,10 @@ export class SimulationManager {
         this.frames++;
 
         if (now - this.lastTelemetryUpdate >= 250) {
-            const fps = this.frames / ((now - this.lastTelemetryUpdate) / 1000);
+            const intervalSeconds = (now - this.lastTelemetryUpdate) / 1000;
+            const fps = this.frames / intervalSeconds;
+            this.stepsPerSecond = this.stepsThisWindow / intervalSeconds;
+            this.stepsThisWindow = 0;
             this.onTelemetry(fps, this);
             this.frames = 0;
             this.lastTelemetryUpdate = now;
