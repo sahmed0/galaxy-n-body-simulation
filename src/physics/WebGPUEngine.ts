@@ -102,6 +102,17 @@ export class WebGPUEngine implements SelfRenderingEngine {
 
     private lastDispatchTimeMs = 0;
 
+    // --- GPU-pass timing via timestamp-query (falls back to wall-clock) ---
+    private hasTimestamp = false;
+    private querySet: GPUQuerySet | null = null;
+    private queryResolveBuffer: GPUBuffer | null = null;
+    private queryStagingBuffer: GPUBuffer | null = null;
+    private lastGpuPassMs = 0;
+    private lastGpuPassSource: 'timestamp' | 'approx' = 'approx';
+    private lastTimestampReadMs = 0;
+    private mapPending = false;
+    private static readonly TIMESTAMP_INTERVAL_MS = 250;
+
     /**
      * Invoked when the GPU device is lost *after* a successful init (driver reset,
      * GPU removed, browser policy, OOM). Not fired for an intentional teardown.
@@ -139,6 +150,11 @@ export class WebGPUEngine implements SelfRenderingEngine {
         this.pipeline = null;
         this.pipelineTiled = null;
         this.renderPipeline = null;
+        this.querySet = null;
+        this.queryResolveBuffer = null;
+        this.queryStagingBuffer = null;
+        this.hasTimestamp = false;
+        this.mapPending = false;
         this.bufferParams = null;
         this.bufferParticlesA = null;
         this.bufferParticlesB = null;
@@ -180,8 +196,14 @@ export class WebGPUEngine implements SelfRenderingEngine {
             throw new WebGPUUnavailableError('No WebGPU adapter available.');
         }
 
+        // 'timestamp-query' gives real GPU-pass durations. Optional: request it only when
+        // the adapter advertises it, and fall back to wall-clock timing when it is absent.
+        this.hasTimestamp = adapter.features.has('timestamp-query');
         try {
-            this.device = await adapter.requestDevice({ label: 'WebGPUEngine Device' });
+            this.device = await adapter.requestDevice({
+                label: 'WebGPUEngine Device',
+                requiredFeatures: this.hasTimestamp ? ['timestamp-query'] : [],
+            });
         } catch (err) {
             throw new WebGPUUnavailableError('adapter.requestDevice() failed.', { cause: err });
         }
@@ -273,6 +295,22 @@ export class WebGPUEngine implements SelfRenderingEngine {
             layout: pipelineLayoutCompute,
             compute: { module: shaderModule, entryPoint: 'sim_update_tiled' },
         });
+
+        // Timestamp-query resources: a 2-entry query set (pass begin/end) resolved into
+        // a buffer, then copied to a mappable staging buffer for async read-back.
+        if (this.hasTimestamp) {
+            this.querySet = this.device.createQuerySet({ type: 'timestamp', count: 2 });
+            this.queryResolveBuffer = this.device.createBuffer({
+                label: 'Timestamp Resolve Buffer',
+                size: 16, // 2 x u64
+                usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+            });
+            this.queryStagingBuffer = this.device.createBuffer({
+                label: 'Timestamp Staging Buffer',
+                size: 16,
+                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+            });
+        }
 
         this.renderPipeline = await this.device.createRenderPipelineAsync({
             label: 'Render Pipeline',
@@ -446,9 +484,21 @@ export class WebGPUEngine implements SelfRenderingEngine {
 
         const pipeline = this.kernelMode === 'tiled' ? this.pipelineTiled : this.pipeline;
 
+        // Throttle timestamp read-back: at most one sample every TIMESTAMP_INTERVAL_MS,
+        // and never while a previous map is still pending. On other frames we run a plain
+        // dispatch with no query overhead.
+        const nowMs = performance.now();
+        const sampleTimestamp = this.hasTimestamp && !this.mapPending
+            && this.querySet !== null
+            && (nowMs - this.lastTimestampReadMs) >= WebGPUEngine.TIMESTAMP_INTERVAL_MS;
+
         const commandEncoder = this.device.createCommandEncoder({ label: 'Compute Command Encoder' });
 
-        const computePass = commandEncoder.beginComputePass({ label: 'Compute Pass' });
+        const computePass = commandEncoder.beginComputePass(
+            sampleTimestamp
+                ? { label: 'Compute Pass', timestampWrites: { querySet: this.querySet!, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } }
+                : { label: 'Compute Pass' }
+        );
         computePass.setPipeline(pipeline);
         computePass.setBindGroup(0, this.bindGroupParams!);
 
@@ -460,11 +510,34 @@ export class WebGPUEngine implements SelfRenderingEngine {
         computePass.dispatchWorkgroups(workgroupCount);
         computePass.end();
 
+        if (sampleTimestamp && this.queryResolveBuffer && this.queryStagingBuffer) {
+            commandEncoder.resolveQuerySet(this.querySet!, 0, 2, this.queryResolveBuffer, 0);
+            commandEncoder.copyBufferToBuffer(this.queryResolveBuffer, 0, this.queryStagingBuffer, 0, 16);
+        }
+
         const start = performance.now();
         this.device.queue.submit([commandEncoder.finish()]);
         this.device.queue.onSubmittedWorkDone().then(() => {
             this.lastDispatchTimeMs = performance.now() - start;
         });
+
+        if (sampleTimestamp && this.queryStagingBuffer) {
+            this.lastTimestampReadMs = nowMs;
+            this.mapPending = true;
+            const staging = this.queryStagingBuffer;
+            staging.mapAsync(GPUMapMode.READ).then(() => {
+                const times = new BigUint64Array(staging.getMappedRange().slice(0));
+                staging.unmap();
+                // Timestamps are in nanoseconds; diff and convert to ms.
+                const deltaNs = times[1] - times[0];
+                this.lastGpuPassMs = Number(deltaNs) / 1e6;
+                this.lastGpuPassSource = 'timestamp';
+                this.mapPending = false;
+            }).catch(() => {
+                // Device lost or map failed: drop back to the wall-clock fallback.
+                this.mapPending = false;
+            });
+        }
 
         // Swap for next step. After incrementing, the latest state is in the
         // buffer the next compute step would READ from.
@@ -520,6 +593,19 @@ export class WebGPUEngine implements SelfRenderingEngine {
     }
 
     /**
+     * Duration of the last measured compute pass. Prefers a real GPU-timeline
+     * measurement from timestamp-query when one is fresh; otherwise reports the
+     * `onSubmittedWorkDone` wall-clock approximation.
+     * @returns The pass duration in ms and which clock produced it.
+     */
+    getLastGpuPassMs(): { ms: number; source: 'timestamp' | 'approx' } {
+        if (this.hasTimestamp && this.lastGpuPassSource === 'timestamp') {
+            return { ms: this.lastGpuPassMs, source: 'timestamp' };
+        }
+        return { ms: this.lastDispatchTimeMs, source: 'approx' };
+    }
+
+    /**
      * Approximate GPU memory held by the particle and property buffers.
      * @returns Buffer footprint in megabytes.
      */
@@ -549,6 +635,9 @@ export class WebGPUEngine implements SelfRenderingEngine {
         this.bufferParticlesB?.destroy();
         this.bufferProps?.destroy();
         this.bufferParams?.destroy();
+        this.querySet?.destroy();
+        this.queryResolveBuffer?.destroy();
+        this.queryStagingBuffer?.destroy();
         this.device?.destroy();
         this.canvas.remove();
         // Forget every per-device reference so the instance is inert afterwards.
