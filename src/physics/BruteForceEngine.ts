@@ -21,6 +21,9 @@ export class BruteForceEngine implements SharedStateEngine {
     // nothing in steady state. Safe: each engine steps single-threaded, one call at a time.
     private scratchAccel: Accel = { ax: 0, ay: 0 };
 
+    // Exact pairwise-interaction count evaluated by the most recent step, for telemetry.
+    private lastInteractionCount = 0;
+
     /**
      * Adopts the given state as the engine's working set.
      * @param state - The SoA state this engine steps in place.
@@ -45,6 +48,14 @@ export class BruteForceEngine implements SharedStateEngine {
      */
     public dispose(): void {
         // Intentionally empty.
+    }
+
+    /**
+     * Exact pairwise-interaction count the most recent step evaluated.
+     * @returns Interactions from the last {@link step}.
+     */
+    public getLastInteractionCount(): number {
+        return this.lastInteractionCount;
     }
 
     /**
@@ -107,6 +118,10 @@ export class BruteForceEngine implements SharedStateEngine {
         // loop bounds. (Drops the i<j symmetric optimisation in exchange for a single
         // force law shared with Barnes-Hut.)
         const hn = activeCount - start;
+        // Exact pairwise count: heavy↔heavy (each of hn heavies sums over the other hn−1)
+        // plus heavy→light (hn heavies acting one-way on the n−activeCount passive tracers;
+        // naturally 0 when active/passive is off, since activeCount == n there).
+        this.lastInteractionCount = hn * (hn - 1) + hn * (n - activeCount);
         if (hn > 1) {
             const hx = px.subarray(start, activeCount);
             const hy = py.subarray(start, activeCount);

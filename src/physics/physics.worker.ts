@@ -54,7 +54,7 @@ self.onmessage = (e: MessageEvent) => {
  * @param engine - The Barnes-Hut engine bound to that memory's state.
  * @returns True if a step ran; false if the status was not COMPUTING.
  */
-export function serviceOneStep(memory: PhysicsMemory, engine: { step(dt: number, params: PhysicsParams): void }): boolean {
+export function serviceOneStep(memory: PhysicsMemory, engine: { step(dt: number, params: PhysicsParams): void; getLastInteractionCount?(): number }): boolean {
     const flags = memory.flags;
     const floatParams = memory.floatParams;
 
@@ -85,6 +85,9 @@ export function serviceOneStep(memory: PhysicsMemory, engine: { step(dt: number,
     // Plain store: FLAG_STEP_US is a diagnostic read by the UI, not a synchronisation
     // point, so it needs no atomic ordering guarantee.
     flags[PhysicsMemory.FLAG_STEP_US] = Math.round((performance.now() - t0) * 1000);
+    // Surface the engine's per-step interaction count to the main thread for telemetry
+    // (float slot; a plain diagnostic write, like FLAG_STEP_US).
+    floatParams[PhysicsMemory.PARAM_INTERACTIONS] = engine.getLastInteractionCount?.() ?? 0;
     Atomics.add(flags, PhysicsMemory.FLAG_STEPS_DONE, 1);
 
     // Unblock the main thread by restoring the flag, signalling that new array

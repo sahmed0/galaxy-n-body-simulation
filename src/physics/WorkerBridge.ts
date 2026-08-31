@@ -93,6 +93,16 @@ export class WorkerBridge implements SharedStateEngine {
     }
 
     /**
+     * Pairwise-interaction count the worker's Barnes-Hut engine evaluated in its most
+     * recent step, read from the shared float slot. Plain read - it is a diagnostic,
+     * not a synchronisation point.
+     * @returns Interactions from the worker's last completed step.
+     */
+    public getLastInteractionCount(): number {
+        return this.memory.floatParams[PhysicsMemory.PARAM_INTERACTIONS];
+    }
+
+    /**
      * Seeds the shared buffer with the given initial conditions. A no-op when the
      * conditions already are the shared state (the common case), since the worker
      * reads that buffer directly.

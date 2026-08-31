@@ -95,6 +95,7 @@ export class WebGPUEngine implements SelfRenderingEngine {
     private simStep = 0;
     private count = 0;
     private activeCount = 0; // Number of heavy particles
+    private lastUseActivePassive = false; // Mirrors the last uploaded uniform, for interaction counting
 
     private bindGroupLayoutCompute: GPUBindGroupLayout | null = null;
     private bindGroupLayoutRender: GPUBindGroupLayout | null = null;
@@ -459,6 +460,7 @@ export class WebGPUEngine implements SelfRenderingEngine {
         // canvasSize carries physical pixels, so scale cameraZoom by dpr to map world units to
         // physical pixels uniformly (the shader multiplies both position and point size by zoom).
         // cameraPos is left unscaled: it is subtracted before the zoom multiply in the shader.
+        this.lastUseActivePassive = params.useActivePassive;
         const fields = buildUniformFields(params, dt, this.count, this.activeCount,
             this.canvas.width, this.canvas.height);
         const zoomField = fields.find(f => f.name === 'cameraZoom');
@@ -603,6 +605,17 @@ export class WebGPUEngine implements SelfRenderingEngine {
             return { ms: this.lastGpuPassMs, source: 'timestamp' };
         }
         return { ms: this.lastDispatchTimeMs, source: 'approx' };
+    }
+
+    /**
+     * Exact number of pairwise force interactions the last step evaluated:
+     * `count × limit`, where limit is the active-source count (all bodies when
+     * active/passive is off). The GPU force loop is dense, so this closed form is exact.
+     * @returns Pairwise interactions evaluated in the most recent step.
+     */
+    getLastInteractionCount(): number {
+        const limit = this.lastUseActivePassive ? this.activeCount : this.count;
+        return this.count * limit;
     }
 
     /**

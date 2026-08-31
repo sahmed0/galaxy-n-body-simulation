@@ -33,7 +33,7 @@ export class PhysicsMemory {
     static readonly FLAG_STEP_US = 11;             // int: duration of last step, microseconds
     static readonly PARAM_ACTIVE_COUNT = 12;       // float: activeCount passed to the worker step
     static readonly PARAM_USE_ACTIVE_PASSIVE = 13; // float: useActivePassive flag (0/1)
-    static readonly PARAM_INTERACTIONS = 14;       // float: reserved
+    static readonly PARAM_INTERACTIONS = 14;       // float: worker's interaction count for the last step
 
     /**
      * Evaluates total sizes based on array constants and aligns TypedArrays 

@@ -36,6 +36,10 @@ export class BarnesHutEngine implements SharedStateEngine {
     // nothing in steady state. Safe: each engine steps single-threaded, one call at a time.
     private scratchAccel: Accel = { ax: 0, ay: 0 };
 
+    // Number of pairwise interactions (collected tree-walk sources) the most recent
+    // step evaluated, for telemetry. Depends on N and theta, so it is measured, not derived.
+    private lastInteractionCount = 0;
+
     // No permanent acceleration buffers needed for Leapfrog
     // We calculate acceleration and apply it directly to velocity.
 
@@ -68,6 +72,15 @@ export class BarnesHutEngine implements SharedStateEngine {
             this.root.free();
             this.root = undefined;
         }
+    }
+
+    /**
+     * Number of pairwise interactions the most recent step evaluated (collected
+     * tree-walk sources summed over all bodies).
+     * @returns Interactions from the last {@link step}.
+     */
+    public getLastInteractionCount(): number {
+        return this.lastInteractionCount;
     }
 
     /**
@@ -157,11 +170,16 @@ export class BarnesHutEngine implements SharedStateEngine {
         // sources acting on `i`, then the shared `pairwiseAccel` kernel sums them -
         // BH and brute force therefore use the identical pairwise force law, so the
         // only difference under test is the theta tree approximation.
+        // Count actual sources collected during the tree walks (srcX minus the receiver
+        // slot at index 0), giving the exact per-step interaction total for telemetry.
+        let interactions = 0;
         const acc = this.scratchAccel;
         for (let i = start; i < n; i++) {
             this.treeAcceleration(i, G, theta, softeningSq);
+            interactions += this.srcX.length - 1;
             applyKick(vx, vy, i, acc.ax, acc.ay, dt);
         }
+        this.lastInteractionCount = interactions;
 
         // 2b. Add Central Forces (Dark Matter Halo + Supermassive Black Hole), via
         // the shared central-field kernels (same formulas, dt applied by applyKick).

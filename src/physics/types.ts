@@ -86,6 +86,14 @@ export interface PhysicsEngine {
      * timers). Safe to call more than once; the engine is unusable afterwards.
      */
     dispose(): void;
+
+    /**
+     * Exact number of pairwise force interactions the most recent step evaluated,
+     * for honest performance telemetry. Optional so engines that do not track it are
+     * not forced to implement it; callers must treat a missing method as "unknown".
+     * @returns Pairwise interactions evaluated in the last step.
+     */
+    getLastInteractionCount?(): number;
 }
 
 /**
