@@ -7,7 +7,7 @@ struct Params {
   count: f32,
   activeCount: f32,      // Number of heavy particles
   useActivePassive: f32, // 0.0 or 1.0
-  theta: f32,
+  pad4: f32,             // padding: keeps the following vec2 8-byte aligned (dense f32 packing)
   dmStrength: f32,
   cameraPos: vec2<f32>,
   cameraZoom: f32,
@@ -114,6 +114,98 @@ fn sim_update(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
 
   // 6. Store Result
   particlesOut[index] = Particle(pos, vel);
+}
+
+// Workgroup-tiled variant of sim_update: identical physics, but each workgroup
+// cooperatively stages TILE sources into fast shared memory and reuses them across
+// all 64 threads, cutting global-memory traffic on large N. Selected by kernelMode
+// in WebGPUEngine; the naive sim_update above stays for parity checking.
+const TILE = 64u;
+var<workgroup> tilePosMass : array<vec4<f32>, 64>; // xy = pos, z = mass, w unused
+
+@compute @workgroup_size(64)
+fn sim_update_tiled(
+  @builtin(global_invocation_id) GlobalInvocationID : vec3<u32>,
+  @builtin(local_invocation_id) LocalInvocationID : vec3<u32>,
+) {
+  let index = GlobalInvocationID.x;
+  let local = LocalInvocationID.x;
+
+  // Divergence trap: out-of-range threads and the pinned BH marker do no useful
+  // work, but they MUST still execute every workgroupBarrier() below. A barrier
+  // reached by only some threads of a workgroup is undefined behaviour, so we
+  // compute `valid` and gate only the loads/writes on it - never the barriers.
+  let valid = index < u32(params.count) && !(index == 0u && params.blackHoleMass > 0.0);
+
+  var pos = vec2<f32>(0.0, 0.0);
+  var vel = vec2<f32>(0.0, 0.0);
+  if (valid) {
+    let pIn = particlesIn[index];
+    pos = pIn.pos;
+    vel = pIn.vel;
+  }
+  var acc = vec2<f32>(0.0, 0.0);
+
+  // Source range mirrors the naive kernel's active/passive select.
+  let limit = select(u32(params.count), u32(params.activeCount), params.useActivePassive > 0.5);
+  let numTiles = (limit + TILE - 1u) / TILE;
+
+  for (var t = 0u; t < numTiles; t = t + 1u) {
+    // Cooperative load: each thread stages one source into shared memory. Out-of-range
+    // slots and the pinned BH (global slot 0) store mass 0 so they exert no force; the
+    // +softening² in the denominator keeps a zero-mass source from producing 0/0.
+    let src = t * TILE + local;
+    if (src < limit && !(src == 0u && params.blackHoleMass > 0.0)) {
+      let sp = particlesIn[src];
+      tilePosMass[local] = vec4<f32>(sp.pos, propsIn[src].x, 0.0);
+    } else {
+      tilePosMass[local] = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
+    workgroupBarrier();
+
+    // Accumulate this tile's 64 staged sources (same skip rules as naive: self, and
+    // zero-mass sources which contribute nothing).
+    for (var k = 0u; k < TILE; k = k + 1u) {
+      let srcIndex = t * TILE + k;
+      if (srcIndex == index) {
+        continue;
+      }
+      let other = tilePosMass[k];
+      let d = other.xy - pos;
+      let distSq = dot(d, d) + params.softening * params.softening;
+      let invDist = inverseSqrt(distSq);
+      let invDistCubed = invDist * invDist * invDist;
+      let f = params.gravity * other.z * invDistCubed;
+      acc = acc + f * d;
+    }
+    workgroupBarrier();
+  }
+
+  // Central forces (Dark Matter Halo + SMBH): identical to the naive kernel.
+  let rawDistSq = dot(pos, pos);
+
+  if (params.dmStrength > 0.0) {
+    let aDM_base = (params.dmStrength * params.dmStrength) / (rawDistSq + params.dmCoreRadius * params.dmCoreRadius);
+    acc = acc - pos * aDM_base;
+  }
+
+  if (params.blackHoleMass > 0.0) {
+    let smbhDistSq = rawDistSq + params.blackHoleSoftening * params.blackHoleSoftening;
+    let invDistSMBH = inverseSqrt(smbhDistSq);
+    let aSMBH_base = (params.gravity * params.blackHoleMass) * (invDistSMBH * invDistSMBH * invDistSMBH);
+    acc = acc - pos * aSMBH_base;
+  }
+
+  // Integrate (kick-drift leapfrog) + store. Writes are guarded now that every
+  // barrier is behind us. The pinned BH is passed through unchanged so it stays put.
+  vel = vel + acc * params.dt;
+  pos = pos + vel * params.dt;
+
+  if (valid) {
+    particlesOut[index] = Particle(pos, vel);
+  } else if (index == 0u && params.blackHoleMass > 0.0) {
+    particlesOut[0] = particlesIn[0];
+  }
 }
 
 // --- Rendering ---

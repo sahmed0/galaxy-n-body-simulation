@@ -45,7 +45,7 @@ export function buildUniformFields(
         { name: 'count', value: count },
         { name: 'activeCount', value: activeCount },
         { name: 'useActivePassive', value: params.useActivePassive ? 1.0 : 0.0 },
-        { name: 'theta', value: params.theta || 1.0 },
+        { name: 'pad4', value: 0.0 },
         { name: 'dmStrength', value: params.dmStrength || 0.0 },
         { name: 'cameraPos.x', value: params.cameraX || 0 },
         { name: 'cameraPos.y', value: params.cameraY || 0 },
@@ -71,8 +71,15 @@ export class WebGPUEngine implements SelfRenderingEngine {
     private canvas: HTMLCanvasElement;
     private device: GPUDevice | null = null;
     private context: GPUCanvasContext | null = null;
-    private pipeline: GPUComputePipeline | null = null;
+    private pipeline: GPUComputePipeline | null = null;        // naive sim_update
+    private pipelineTiled: GPUComputePipeline | null = null;   // workgroup-tiled sim_update_tiled
     private renderPipeline: GPURenderPipeline | null = null;
+
+    /**
+     * Which compute kernel step() dispatches. The tiled kernel stages sources in
+     * workgroup memory and is the default; 'naive' is kept for the bench parity check.
+     */
+    public kernelMode: 'tiled' | 'naive' = 'tiled';
 
     // Buffers
     private bufferParams: GPUBuffer | null = null;
@@ -130,6 +137,7 @@ export class WebGPUEngine implements SelfRenderingEngine {
         this.device = null;
         this.context = null;
         this.pipeline = null;
+        this.pipelineTiled = null;
         this.renderPipeline = null;
         this.bufferParams = null;
         this.bufferParticlesA = null;
@@ -256,6 +264,14 @@ export class WebGPUEngine implements SelfRenderingEngine {
             label: 'Compute Pipeline (Sim Update)',
             layout: pipelineLayoutCompute,
             compute: { module: shaderModule, entryPoint: 'sim_update' },
+        });
+
+        // Tiled kernel shares the compute pipeline layout (workgroup memory needs no
+        // layout change); step() picks between the two via kernelMode.
+        this.pipelineTiled = await this.device.createComputePipelineAsync({
+            label: 'Compute Pipeline (Sim Update Tiled)',
+            layout: pipelineLayoutCompute,
+            compute: { module: shaderModule, entryPoint: 'sim_update_tiled' },
         });
 
         this.renderPipeline = await this.device.createRenderPipelineAsync({
@@ -423,15 +439,17 @@ export class WebGPUEngine implements SelfRenderingEngine {
      * @param params - Configuration parameter blocks evaluating runtime features.
      */
     step(dt: number, params: PhysicsParams) {
-        if (!this.device || !this.pipeline) return;
+        if (!this.device || !this.pipeline || !this.pipelineTiled) return;
         if (!this.bindGroupComputeA || !this.bindGroupComputeB) return;
 
         this.updateUniforms(dt, params);
 
+        const pipeline = this.kernelMode === 'tiled' ? this.pipelineTiled : this.pipeline;
+
         const commandEncoder = this.device.createCommandEncoder({ label: 'Compute Command Encoder' });
 
         const computePass = commandEncoder.beginComputePass({ label: 'Compute Pass' });
-        computePass.setPipeline(this.pipeline);
+        computePass.setPipeline(pipeline);
         computePass.setBindGroup(0, this.bindGroupParams!);
 
         // Step 0 (even): read A, write B.
