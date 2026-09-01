@@ -132,6 +132,15 @@ test('WebGPU either runs or falls back to Barnes-Hut gracefully', async ({ page 
     }
 });
 
+test('bench overlay appears with ?bench', async ({ page }) => {
+    // The bench harness is a separate async chunk loaded only when ?bench is present.
+    // Assert the overlay mounts; do NOT run the sweep in CI (it is long and manual).
+    await page.goto('/sim.html?bench');
+    await page.waitForFunction(() => '__sim' in window, undefined, { timeout: 15_000 });
+    await expect(page.locator('#bench-overlay')).toBeVisible();
+    await expect(page.locator('#bench-run')).toBeVisible();
+});
+
 test('star-count input clamps to the brute-force cap', async ({ page }) => {
     await bootSim(page);
     await selectEngine(page, 'brute');

@@ -619,6 +619,36 @@ export class WebGPUEngine implements SelfRenderingEngine {
     }
 
     /**
+     * Reads the current particle positions/velocities back to the CPU. Bench-only
+     * diagnostic (the kernel parity check) - the render path never reads GPU state
+     * back. Copies the buffer holding the latest step's output into a mappable
+     * staging buffer and returns it as a flat `[x, y, vx, vy, …]` Float32Array.
+     * @returns The particle pos/vel array, or null if the device is unavailable.
+     */
+    async readParticles(): Promise<Float32Array | null> {
+        if (!this.device) return null;
+        // After step() increments simStep, the latest state lives in the buffer the
+        // next step would read: even -> A, odd -> B.
+        const latest = (this.simStep % 2 === 0) ? this.bufferParticlesA : this.bufferParticlesB;
+        if (!latest) return null;
+
+        const size = latest.size;
+        const staging = this.device.createBuffer({
+            label: 'Particle Readback Staging',
+            size,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
+        const encoder = this.device.createCommandEncoder({ label: 'Readback Encoder' });
+        encoder.copyBufferToBuffer(latest, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        await staging.mapAsync(GPUMapMode.READ);
+        const out = new Float32Array(staging.getMappedRange().slice(0));
+        staging.unmap();
+        staging.destroy();
+        return out;
+    }
+
+    /**
      * Approximate GPU memory held by the particle and property buffers.
      * @returns Buffer footprint in megabytes.
      */
