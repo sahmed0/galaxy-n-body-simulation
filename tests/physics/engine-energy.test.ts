@@ -16,14 +16,28 @@
  * Each analytic potential is the exact one whose gradient is the corresponding kernel
  * force, so the total is a genuinely conserved quantity for the softened system.
  *
+ * The potential *formulas* come from `src/physics/energy` - the single source of truth
+ * they now share with the production `EnergyMonitor`. The summation loops below stay
+ * deliberately independent of that module: the formulas are checked
+ * once, and this suite remains an independent check on the summing. The frozen bands
+ * are unchanged by that extraction, which is what proves it was numerically inert.
+ *
  * All ICs are seeded (mulberry32) and deterministic; the reported bands were measured
  * here and frozen with margin, so a regression that breaks conservation trips the test.
  */
 import { describe, it, expect } from 'vitest';
 import { BruteForceEngine, BarnesHutEngine, PhysicsState } from '../../src/physics';
 import type { PhysicsParams } from '../../src/physics/types';
+import {
+    pairPotential,
+    darkMatterPotential,
+    blackHolePotential,
+    DEFAULT_DM_CORE_RADIUS,
+} from '../../src/physics/energy';
 import { mulberry32 } from '../utils/rng';
+import { makeVirialCluster, staggerHalfStep } from '../utils/clusters';
 
+/** Gravitational constant for the BH-disk case, whose accelerations are computed here. */
 const G = 1.0;
 
 /**
@@ -47,26 +61,25 @@ function totalEnergy(state: PhysicsState, params: PhysicsParams, start: number, 
         for (let j = i + 1; j < activeCount; j++) {
             const dx = px[j] - px[i];
             const dy = py[j] - py[i];
-            const dist = Math.sqrt(dx * dx + dy * dy + epsSq);
-            pe -= (G * mass[i] * mass[j]) / dist;
+            pe += pairPotential(dx * dx + dy * dy, epsSq, params.gravity, mass[i], mass[j]);
         }
     }
 
     // External analytic potentials (one-way central forces), per active body.
     const dmStrength = params.dmStrength || 0;
     if (dmStrength > 0) {
-        const rcoreSq = (params.dmCoreRadius || 50.0) ** 2;
+        const rcore = params.dmCoreRadius || DEFAULT_DM_CORE_RADIUS;
         for (let i = start; i < activeCount; i++) {
             const rSq = px[i] * px[i] + py[i] * py[i];
-            pe += mass[i] * 0.5 * dmStrength * dmStrength * Math.log(rSq + rcoreSq);
+            pe += mass[i] * darkMatterPotential(rSq, dmStrength, rcore);
         }
     }
     const bhMass = params.blackHoleMass || 0;
     if (bhMass > 0) {
         const bhEpsSq = (params.blackHoleSoftening || params.softening) ** 2;
         for (let i = start; i < activeCount; i++) {
-            const r = Math.sqrt(px[i] * px[i] + py[i] * py[i] + bhEpsSq);
-            pe -= (G * bhMass * mass[i]) / r;
+            const rSq = px[i] * px[i] + py[i] * py[i];
+            pe += mass[i] * blackHolePotential(rSq, bhEpsSq, params.gravity, bhMass);
         }
     }
 
@@ -109,113 +122,6 @@ function runBand(
     const last = mean(samples.slice(samples.length - window));
     const drift = Math.abs(last - first) / absE0;
     return { band, drift };
-}
-
-/** Removes the net momentum from an SoA velocity pair over `[start, n)` (zero-drift COM). */
-function removeNetMomentum(state: PhysicsState, start: number): void {
-    const { velocityX: vx, velocityY: vy, mass } = state;
-    let px = 0, py = 0, M = 0;
-    for (let i = start; i < state.n; i++) {
-        px += mass[i] * vx[i];
-        py += mass[i] * vy[i];
-        M += mass[i];
-    }
-    const vcx = px / M, vcy = py / M;
-    for (let i = start; i < state.n; i++) {
-        vx[i] -= vcx;
-        vy[i] -= vcy;
-    }
-}
-
-/**
- * Applies the leapfrog half-step stagger: shifts every velocity back half a step
- * (`v -= a·dt/2`) from the acceleration `accelFn(i)` at the initial positions, so the
- * subsequent kick-drift steps see velocities offset the required half step ahead.
- */
-function staggerHalfStep(
-    state: PhysicsState,
-    start: number,
-    dt: number,
-    accelFn: (i: number) => { ax: number; ay: number },
-): void {
-    const { velocityX: vx, velocityY: vy } = state;
-    for (let i = start; i < state.n; i++) {
-        const a = accelFn(i);
-        vx[i] -= a.ax * dt * 0.5;
-        vy[i] -= a.ay * dt * 0.5;
-    }
-}
-
-/**
- * Builds a seeded, centrally-concentrated 2-D cluster of `n` equal-mass bodies in
- * approximate virial balance: positions from a smooth centrally-peaked profile, random
- * isotropic velocities rescaled so KE = ½|PE|, net momentum removed, then half-step
- * staggered for leapfrog. No halo/BH - pure self-gravity.
- */
-function makeVirialCluster(n: number, seed: number, params: PhysicsParams): PhysicsState {
-    const rng = mulberry32(seed);
-    const state = new PhysicsState(n);
-    const scale = 5.0;
-    for (let i = 0; i < n; i++) {
-        // r = scale·√(−ln(1−u)) - an exponential-in-r² blob, smooth and bounded.
-        const r = scale * Math.sqrt(-Math.log(1 - rng()));
-        const theta = rng() * 2 * Math.PI;
-        state.positionX[i] = r * Math.cos(theta);
-        state.positionY[i] = r * Math.sin(theta);
-        state.velocityX[i] = rng() * 2 - 1;
-        state.velocityY[i] = rng() * 2 - 1;
-        state.mass[i] = 1.0;
-    }
-
-    // Rescale velocities to KE = ½|PE| (2-D virial balance for the softened field).
-    const pe = potentialOnly(state, params, 0, n);
-    let ke = 0;
-    for (let i = 0; i < n; i++) {
-        ke += 0.5 * state.mass[i] * (state.velocityX[i] ** 2 + state.velocityY[i] ** 2);
-    }
-    const targetKE = 0.5 * Math.abs(pe);
-    const vScale = Math.sqrt(targetKE / ke);
-    for (let i = 0; i < n; i++) {
-        state.velocityX[i] *= vScale;
-        state.velocityY[i] *= vScale;
-    }
-
-    removeNetMomentum(state, 0);
-    staggerHalfStep(state, 0, params.dt, (i) => pairAccel(state, params, 0, n, i));
-    return state;
-}
-
-/** Softened pairwise potential of the active subsystem (helper for virial scaling). */
-function potentialOnly(state: PhysicsState, params: PhysicsParams, start: number, activeCount: number): number {
-    const { positionX: px, positionY: py, mass } = state;
-    const epsSq = params.softening * params.softening;
-    let pe = 0;
-    for (let i = start; i < activeCount; i++) {
-        for (let j = i + 1; j < activeCount; j++) {
-            const dx = px[j] - px[i];
-            const dy = py[j] - py[i];
-            const dist = Math.sqrt(dx * dx + dy * dy + epsSq);
-            pe -= (G * mass[i] * mass[j]) / dist;
-        }
-    }
-    return pe;
-}
-
-/** Direct pairwise acceleration on body `i` over `[start, n)` (for the half-step stagger). */
-function pairAccel(state: PhysicsState, params: PhysicsParams, start: number, n: number, i: number): { ax: number; ay: number } {
-    const { positionX: px, positionY: py, mass } = state;
-    const epsSq = params.softening * params.softening;
-    let ax = 0, ay = 0;
-    for (let j = start; j < n; j++) {
-        if (j === i) continue;
-        const dx = px[j] - px[i];
-        const dy = py[j] - py[i];
-        const distSq = dx * dx + dy * dy + epsSq;
-        const inv = (G * mass[j]) / (distSq * Math.sqrt(distSq));
-        ax += inv * dx;
-        ay += inv * dy;
-    }
-    return { ax, ay };
 }
 
 /**
