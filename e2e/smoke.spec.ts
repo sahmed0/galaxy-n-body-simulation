@@ -132,6 +132,46 @@ test('WebGPU either runs or falls back to Barnes-Hut gracefully', async ({ page 
     }
 });
 
+// Every CPU engine, not just barnes: the worker is the one that can silently stop
+// sampling if the energy service ever drifts after advancePhysics (arming the worker
+// flips it to COMPUTING, so the quiescence gate would then reject every frame). That
+// failure is invisible to a unit test and shows up here as a readout stuck on '-'.
+for (const engine of ['brute', 'barnes', 'worker'] as const) {
+    test(`energy panel reports a live ΔE/E₀ reading on ${engine}`, async ({ page }) => {
+        await bootSim(page);
+        await selectEngine(page, engine);
+
+        await page.click('#ui-toggle-energy');
+        await expect(page.locator('#energy-panel')).toBeVisible();
+        await expect(page.locator('#energy-panel')).toContainText('ΔE/E₀');
+
+        // The readout starts as the placeholder and only becomes a number once a cycle
+        // completes, so matching a finite scientific literal doubles as "a sample
+        // landed" - i.e. the whole snapshot/chunk/baseline path ran end to end. The
+        // cadence is 1 s and the galaxy default needs ~9 chunks, so 6 s is generous.
+        await expect
+            .poll(() => page.locator('#energy-delta').textContent(), { timeout: 6_000 })
+            .toMatch(/^-?\d+\.\d+e[+-]\d+$/);
+    });
+}
+
+test('energy panel shows the N/A state on the GPU engine', async ({ page }) => {
+    await bootSim(page);
+
+    // Headless Chromium has no usable GPU device, so the option is disabled and
+    // selectOption would time out. Never select webgpu unconditionally.
+    const gpuDisabled = await page.locator('#ui-engine option[value="webgpu"]').isDisabled();
+    test.skip(gpuDisabled, 'no usable GPU device - the webgpu option is disabled');
+
+    await selectEngine(page, 'webgpu');
+    await page.click('#ui-toggle-energy');
+    await expect(page.locator('#energy-panel')).toBeVisible();
+    // Particle state never leaves the device: the plot is replaced by the N/A notice
+    // rather than showing a stale or invented number.
+    await expect(page.locator('#energy-na')).toBeVisible();
+    await expect(page.locator('#energy-delta')).toHaveText('-');
+});
+
 test('bench overlay appears with ?bench', async ({ page }) => {
     // The bench harness is a separate async chunk loaded only when ?bench is present.
     // Assert the overlay mounts; do NOT run the sweep in CI (it is long and manual).
