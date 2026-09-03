@@ -11,6 +11,7 @@ import {
     WorkerBridge,
 } from '../physics';
 import type { AnyEngine, EngineType } from '../physics';
+import { EnergyMonitor } from '../physics/energy';
 import { CanvasRenderer } from '../rendering';
 import { massToColor } from '../utils';
 
@@ -318,6 +319,26 @@ export class SimulationManager {
     stepsPerSecond = 0;
 
     /**
+     * Exact active-subsystem energy/momentum diagnostics, serviced by {@link serviceEnergy}
+     * on a decimated schedule. Read by the UI's energy panel.
+     */
+    readonly energyMonitor = new EnergyMonitor();
+    /**
+     * Whether to spend cycles measuring energy. Owned by the energy panel's visibility:
+     * a closed panel costs nothing.
+     */
+    energyEnabled = false;
+    /**
+     * Accumulated simulated seconds: `dt` × every step actually executed, worker steps
+     * included. Stamped onto each energy sample. Reset with the initial conditions.
+     */
+    simTimeSeconds = 0;
+    /** Wall-clock ms at which the last energy cycle *completed*; gates the next one. */
+    private lastEnergyCycleEndMs = 0;
+    /** Minimum wall-clock gap between the end of one energy cycle and the start of the next. */
+    private static readonly ENERGY_CYCLE_INTERVAL_MS = 1000;
+
+    /**
      * Callback triggered periodically to report simulation performance metrics.
      * @param fps - The calculated frames per second over the last telemetry interval.
      * @param sim - Reference to the current SimulationManager instance.
@@ -512,6 +533,19 @@ export class SimulationManager {
         } else {
             this.initAccretionDisk();
         }
+
+        // Fresh initial conditions: the simulated clock restarts and the old E0 describes
+        // a system that no longer exists. Covers init(), restart(), and preset changes.
+        this.simTimeSeconds = 0;
+        this.resetEnergyBaseline();
+    }
+
+    /**
+     * Drops the ΔE/E₀ baseline and history. Call whenever an edit makes the old E₀
+     * meaningless. Idempotent.
+     */
+    resetEnergyBaseline(): void {
+        this.energyMonitor.resetBaseline();
     }
 
     /**
@@ -886,6 +920,11 @@ export class SimulationManager {
             this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
             this.webGpuEngine.updateUniforms(this.params.dt, this.params);
         }
+
+        // Every velocity in the subsystem just changed, so the old E0 is meaningless.
+        // This is the chokepoint for it: switchEngine() calls us before all of its
+        // fallback early-returns, and the gravity slider's `change` handler calls us too.
+        this.resetEnergyBaseline();
     }
 
     /**
@@ -1569,6 +1608,7 @@ export class SimulationManager {
             const delta = completed - this.workerStepsSeen;
             this.accumulator -= dt * delta;
             this.stepsThisWindow += delta;
+            this.simTimeSeconds += dt * delta;
             this.workerStepsSeen = completed;
             if (this.accumulator < 0) this.accumulator = 0;
             // Drop backlog rather than let it spiral after a stall.
@@ -1589,8 +1629,43 @@ export class SimulationManager {
             steps++;
         }
         this.stepsThisWindow += steps;
+        this.simTimeSeconds += dt * steps;
         // If we hit the cap and are still behind, drop the backlog rather than spiral.
         if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
+    }
+
+    /**
+     * Services the energy monitor for one frame: continues an in-flight cycle, or starts
+     * a new one when the cadence allows. Cheap and non-blocking - at most one chunk of
+     * the pairwise sum per frame.
+     *
+     * Must be called *before* {@link advancePhysics}: on the worker path that method arms
+     * the next step (flipping the bridge to COMPUTING), so a caller that services energy
+     * afterwards would see `quiescent === false` on essentially every frame and never
+     * sample at all. Pre-advance is also the only point where the snapshot and
+     * {@link simTimeSeconds} describe the same instant for the inline engines.
+     *
+     * @param nowMs - The frame's `performance.now()` timestamp.
+     * @param quiescent - Whether the state arrays are safe to read (no worker step in flight).
+     */
+    private serviceEnergy(nowMs: number, quiescent: boolean): void {
+        const engine = this.engine;
+        // The GPU engine's particles never leave the device, so there
+        // is nothing to measure: stay idle and let the panel show its N/A state.
+        if (engine.kind !== 'shared-state' || !this.energyEnabled) {
+            this.energyMonitor.cancelCycle();
+            return;
+        }
+        if (this.energyMonitor.inFlight) {
+            if (this.energyMonitor.processChunk()) this.lastEnergyCycleEndMs = nowMs;
+            return;
+        }
+        if (!quiescent) return;
+        if (nowMs - this.lastEnergyCycleEndMs < SimulationManager.ENERGY_CYCLE_INTERVAL_MS) return;
+        // Cadence is measured from the last cycle's *end*, so a cycle longer than the
+        // interval simply back-to-backs; two cycles can never overlap.
+        this.energyMonitor.beginCycle(engine.state, this.params, this.simTimeSeconds);
+        if (this.energyMonitor.processChunk()) this.lastEnergyCycleEndMs = nowMs;
     }
 
     /**
@@ -1615,7 +1690,10 @@ export class SimulationManager {
         this.renderer.massThreshold = this.params.massThreshold;
         this.renderer.showQuadTree = this.params.shouldShowQuadTree;
 
-        const onWorker = this.engine === this.workerBridge && this.workerBridge !== null;
+        // One isBusy() read, shared by the paint gate and the energy gate below.
+        const bridge = this.workerBridge !== null && this.engine === this.workerBridge ? this.workerBridge : null;
+        const onWorker = bridge !== null;
+        const workerIdle = bridge !== null && !bridge.isBusy();
 
         // Worker read-gate + ordering: the worker mutates the shared arrays for the
         // whole duration of a step, and a step can take longer than one display frame.
@@ -1623,10 +1701,15 @@ export class SimulationManager {
         // step - otherwise arming flips the status to COMPUTING and the read-gate below
         // would skip every paint, so physics would advance invisibly (a frozen view).
         // Painting only while idle also keeps the read-gate's anti-tearing guarantee.
-        if (onWorker && !this.workerBridge!.isBusy()) {
+        if (workerIdle) {
             this.renderer.quadTree = null;
             this.renderer.render();
         }
+
+        // Energy: snapshot only while the shared arrays are quiescent and simTimeSeconds
+        // still matches them - for the worker that is exactly this pre-arm window, the
+        // same reason the paint happens here. See serviceEnergy.
+        this.serviceEnergy(now, !onWorker || workerIdle);
 
         // --- Physics: advance in fixed dt increments proportional to real time ---
         // This keeps the simulation evolving at the same wall-clock rate regardless

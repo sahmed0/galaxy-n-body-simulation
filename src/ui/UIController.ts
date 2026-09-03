@@ -3,6 +3,7 @@
  */
 import { SimulationManager, presetDmDefault, ENGINE_MAX_COUNT } from '../state';
 import { el, elOrNull, formatRate } from '../utils';
+import { EnergyPanel } from './EnergyPanel';
 import type { EngineType } from '../physics';
 
 /** Narrows a raw `<select>` value to a valid {@link EngineType}. */
@@ -100,6 +101,18 @@ export function setupUI(sim: SimulationManager) {
     const darkMatterVal = elOrNull<HTMLElement>('ui-dark-matter-value');
     const showGridCheckbox = elOrNull<HTMLInputElement>('ui-show-grid');
 
+    // The ΔE panel is optional: `elOrNull` (never `el`, which would throw past the
+    // try/catch above and kill *all* UI wiring on a page without the button). No button
+    // means no panel - nothing else here touches it.
+    const energyToggle = elOrNull<HTMLButtonElement>('ui-toggle-energy');
+    const energyPanel = energyToggle ? new EnergyPanel(sim) : null;
+    if (energyToggle && energyPanel) {
+        energyToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            energyPanel.toggle();
+        });
+    }
+
     // The quadtree overlay toggle is only meaningful for Barnes-Hut. Own its visibility
     // here (the state layer no longer touches the DOM to update it).
     const quadTreeGroup = elOrNull<HTMLElement>('ui-quadtree-group');
@@ -192,6 +205,7 @@ export function setupUI(sim: SimulationManager) {
             }
         }
         sim.params.count = clamped;
+        sim.resetEnergyBaseline();
     });
 
     gravityInput.addEventListener('input', (e) => {
@@ -211,6 +225,13 @@ export function setupUI(sim: SimulationManager) {
         const target = e.target as HTMLInputElement;
         sim.params.dmStrength = parseFloat(target.value);
         if (darkMatterVal) darkMatterVal.textContent = sim.params.dmStrength.toFixed(0);
+    });
+
+    // The halo potential is part of the measured energy, so changing its strength
+    // redefines E₀. Only on `change` (release), mirroring the gravity slider: resetting
+    // mid-drag would clear the trace on every tick.
+    darkMatterInput.addEventListener('change', () => {
+        sim.resetEnergyBaseline();
     });
 
     if (showGridCheckbox) {
@@ -296,12 +317,21 @@ export function setupUI(sim: SimulationManager) {
         if (toggleTelemetryBtn?.contains(target) || toggleControlsBtn?.contains(target)) {
             return;
         }
+        if (energyToggle?.contains(target)) {
+            return;
+        }
 
         if (telemetryPill && controlIsland) {
             if (!telemetryPill.contains(target) && !controlIsland.contains(target)) {
                 telemetryPill.classList.remove('ui-active');
                 controlIsland.classList.remove('ui-active');
             }
+        }
+
+        // Separate from the block above by design: that one is fail-closed (it needs both
+        // elements to exist), and the panel's close must not depend on unrelated elements.
+        if (energyPanel && !energyPanel.root.contains(target)) {
+            energyPanel.close();
         }
     });
 }
