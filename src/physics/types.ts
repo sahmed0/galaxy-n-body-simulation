@@ -12,6 +12,29 @@ export type InitialConditionType = PhysicsState;
 export type EngineType = 'brute' | 'barnes' | 'webgpu' | 'worker';
 
 /**
+ * Maximum particle count each engine can sustain. Brute force is O(N^2) on the main
+ * thread so it caps lowest; the tree engines scale to ~50k; WebGPU handles the largest N.
+ * The UI clamps the stars input and, on engine switch, the current count to these bounds.
+ */
+export const ENGINE_MAX_COUNT: Record<EngineType, number> = {
+    brute: 20_000,
+    barnes: 50_000,
+    worker: 50_000,
+    webgpu: 200_000,
+};
+
+/**
+ * Narrows an untrusted string - a `<select>` value, a URL hash field - to an
+ * {@link EngineType}. Derived from {@link ENGINE_MAX_COUNT} so the accepted set cannot
+ * drift away from the set of engines that have a capacity defined.
+ * @param v - The raw string to test.
+ * @returns Whether `v` names a real engine.
+ */
+export function isEngineType(v: string): v is EngineType {
+    return Object.prototype.hasOwnProperty.call(ENGINE_MAX_COUNT, v);
+}
+
+/**
  * Configuration parameters for the physics simulation step.
  */
 export interface PhysicsParams {

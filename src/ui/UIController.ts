@@ -4,12 +4,8 @@
 import { SimulationManager, presetDmDefault, ENGINE_MAX_COUNT } from '../state';
 import { el, elOrNull, formatRate } from '../utils';
 import { EnergyPanel } from './EnergyPanel';
+import { isEngineType } from '../physics';
 import type { EngineType } from '../physics';
-
-/** Narrows a raw `<select>` value to a valid {@link EngineType}. */
-function isEngineType(v: string): v is EngineType {
-    return v === 'brute' || v === 'barnes' || v === 'webgpu' || v === 'worker';
-}
 
 /** Readable engine names for clamp banners. */
 const ENGINE_LABEL: Record<EngineType, string> = {

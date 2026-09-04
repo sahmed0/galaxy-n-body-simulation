@@ -40,17 +40,9 @@ export function presetFor(type: EngineType): EnginePreset {
     return ENGINE_PRESETS[type];
 }
 
-/**
- * Maximum particle count each engine can sustain. Brute force is O(N^2) on the main
- * thread so it caps lowest; the tree engines scale to ~50k; WebGPU handles the largest N.
- * The UI clamps the stars input and, on engine switch, the current count to these bounds.
- */
-export const ENGINE_MAX_COUNT: Record<EngineType, number> = {
-    brute: 20_000,
-    barnes: 50_000,
-    worker: 50_000,
-    webgpu: 200_000,
-};
+// Engine capacity is a property of the engines, so it lives beside EngineType. Re-exported
+// here because this module is where callers have always imported it from.
+export { ENGINE_MAX_COUNT } from '../physics';
 
 /**
  * Base radius for galaxy particle distribution generation. Used by the accretion
