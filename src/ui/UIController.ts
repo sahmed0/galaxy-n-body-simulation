@@ -2,10 +2,14 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { SimulationManager, presetDmDefault, ENGINE_MAX_COUNT } from '../state';
-import { el, elOrNull, formatRate } from '../utils';
+import { el, elOrNull, formatRate, encodePermalink } from '../utils';
 import { EnergyPanel } from './EnergyPanel';
 import { isEngineType } from '../physics';
 import type { EngineType } from '../physics';
+
+/** How long the "link copied" confirmation stays up. Long enough to read, short enough
+ *  not to outlive the action it confirms. */
+const SHARE_BANNER_MS = 4_000;
 
 /** Readable engine names for clamp banners. */
 const ENGINE_LABEL: Record<EngineType, string> = {
@@ -42,12 +46,26 @@ function disableWorkerOption(select: HTMLSelectElement) {
 }
 
 /**
- * Shows a transient, dismissable banner. Reuses a single banner element so repeated
- * notices replace rather than stack. Used for engine fallbacks, star-count clamps, and
- * will be used for share-link and worker-fallback notices.
- * @param message - The text to display.
+ * Pending auto-hide for the *current* banner. Tracked at module scope because the banner
+ * element is reused by id: a timer left running from a previous message would dismiss
+ * whatever replaced it, silently cutting short a notice that asked to persist.
  */
-function showBanner(message: string) {
+let bannerHideTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Shows a dismissable banner. Reuses a single banner element so repeated notices replace
+ * rather than stack. Used for engine fallbacks, star-count clamps, and share links.
+ * @param message - The text to display.
+ * @param autoHideMs - Dismiss automatically after this long. Omit for anything the user
+ *   must act on or read at their own pace (fallback warnings, clamp notices, and the
+ *   clipboard-failure URL, which they have to select by hand).
+ */
+function showBanner(message: string, autoHideMs?: number) {
+    if (bannerHideTimer !== undefined) {
+        clearTimeout(bannerHideTimer);
+        bannerHideTimer = undefined;
+    }
+
     let banner = document.getElementById('engine-banner');
     if (!banner) {
         banner = document.createElement('div');
@@ -64,6 +82,13 @@ function showBanner(message: string) {
     closeBtn.textContent = '×';
     closeBtn.addEventListener('click', () => banner?.remove());
     banner.appendChild(closeBtn);
+
+    if (autoHideMs !== undefined) {
+        bannerHideTimer = setTimeout(() => {
+            bannerHideTimer = undefined;
+            banner?.remove();
+        }, autoHideMs);
+    }
 }
 
 /**
@@ -106,6 +131,38 @@ export function setupUI(sim: SimulationManager) {
         energyToggle.addEventListener('click', (e) => {
             e.stopPropagation();
             energyPanel.toggle();
+        });
+    }
+
+    // Share is optional for the same reason as the ΔE panel above. Everything it reads
+    // off `sim` is read inside the handler, never at setup time.
+    const shareBtn = elOrNull<HTMLButtonElement>('ui-share');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const hash = encodePermalink({
+                seed: sim.currentSeed,
+                count: sim.params.count,
+                engine: sim.params.engineType,
+                preset: sim.params.preset,
+                gravity: sim.params.gravity,
+                dmStrength: sim.params.dmStrength,
+            });
+            // Write the URL before copying: location.href is what gets copied, so it has
+            // to be carrying the hash by then.
+            history.replaceState(null, '', hash);
+            try {
+                // navigator.clipboard is absent outside a secure context. Optional-chaining
+                // it would resolve to undefined and report success on a copy that never
+                // happened, so the absence has to be an explicit throw.
+                if (!navigator.clipboard) throw new Error('clipboard unavailable');
+                await navigator.clipboard.writeText(location.href);
+                showBanner("Link copied - reproduces this run's initial conditions", SHARE_BANNER_MS);
+            } catch {
+                // No clipboard access. The URL is in the address bar regardless, so show it
+                // and let the user copy by hand - which they cannot do against a timer.
+                showBanner(`Copy this link: ${location.href}`);
+            }
         });
     }
 

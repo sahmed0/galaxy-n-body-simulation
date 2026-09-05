@@ -3,6 +3,7 @@
  */
 import { SimulationManager } from './state';
 import { setupUI, updateTelemetry, setupInteractions } from './ui';
+import { parsePermalink, randomUint32 } from './utils';
 import './global.css';
 import './style.css';
 import './ui/ui.css';
@@ -64,6 +65,22 @@ async function startApp() {
   window.addEventListener('resize', drawSpaceBackground);
 
   const simManager = new SimulationManager();
+
+  // A permalink pins the realization and the parameters that shape it; anything absent
+  // or malformed keeps its default. This must run before init(): initGalaxy() reads
+  // count/preset and init() selects the engine, so none of it can be applied afterwards.
+  // A permalinked engine needs no special handling - it lands in params pre-init and the
+  // existing WebGPU-fallback path in init() covers it exactly as it covers the default.
+  // The hash is left on the URL so the link stays re-copyable. Camera is not encoded.
+  const link = parsePermalink(location.hash);
+  // Explicit `!== undefined` throughout: seed 0 and dmStrength 0 are both legitimate
+  // values and both falsy.
+  if (link.engine !== undefined) simManager.params.engineType = link.engine;
+  if (link.count !== undefined) simManager.params.count = link.count;
+  if (link.preset !== undefined) simManager.params.preset = link.preset;
+  if (link.gravity !== undefined) simManager.params.gravity = link.gravity;
+  if (link.dmStrength !== undefined) simManager.params.dmStrength = link.dmStrength;
+  simManager.setSeed(link.seed ?? randomUint32());
 
   // Set telemetry callback before init so it's ready, but it's used in loop
   simManager.onTelemetry = updateTelemetry;
