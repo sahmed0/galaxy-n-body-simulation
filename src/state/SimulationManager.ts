@@ -13,7 +13,7 @@ import {
 import type { AnyEngine, EngineType } from '../physics';
 import { EnergyMonitor } from '../physics/energy';
 import { CanvasRenderer } from '../rendering';
-import { massToColor } from '../utils';
+import { massToColor, mulberry32, randomUint32 } from '../utils';
 
 /** Per-engine default physics parameters applied on an engine switch. */
 export interface EnginePreset {
@@ -278,10 +278,17 @@ export class SimulationManager {
 
     /**
      * Source of randomness for all initial-condition sampling (Salpeter masses,
-     * disk positions/velocities). Defaults to Math.random so production behaviour
-     * is unchanged; tests inject a seeded mulberry32 for deterministic draws.
+     * disk positions/velocities). Re-derived from {@link currentSeed} by every
+     * {@link initGalaxy}, so one seed means one realization.
      */
-    private rng: () => number = Math.random;
+    private rng: () => number = mulberry32(0);
+
+    /**
+     * Seed of the realization currently loaded. Defaults to 0 rather than a random draw
+     * so a bare manager - i.e. every unit test - is reproducible without ceremony; the
+     * entry layer draws the real default for the app.
+     */
+    public currentSeed = 0;
 
     /**
      * Azimuthally-averaged surface-density profile (Sigma vs radius) of the
@@ -492,9 +499,30 @@ export class SimulationManager {
     }
 
     /**
+     * Pins the realization for the next (re)initialisation, re-deriving the generator now
+     * so a caller that samples before {@link initGalaxy} sees the stream it will get.
+     *
+     * The guarantee covers *initial conditions* only. Later actions draw from the same
+     * stream and advance it - notably {@link switchEngine}, whose
+     * {@link softResetVelocities} resamples Toomre kicks and velocity scatter - so a seed
+     * reproduces t=0, not a mid-run state.
+     *
+     * @param seed - Stream selector, coerced to uint32.
+     */
+    setSeed(seed: number): void {
+        this.currentSeed = seed >>> 0;
+        this.rng = mulberry32(this.currentSeed);
+    }
+
+    /**
      * Initialises/re-initialises galaxy particle data including positions, velocities, and colours.
      */
     initGalaxy() {
+        // Re-derive before any sampling: a restart must reproduce its seed's realization
+        // exactly even though softResetVelocities and engine switches have since advanced
+        // the stream past the initial-condition draws.
+        this.rng = mulberry32(this.currentSeed);
+
         this.memory = new PhysicsMemory(this.params.count);
         this.state = new PhysicsState(this.params.count, this.memory);
         // Tear down any live worker before dropping the reference: the old bridge
@@ -1548,8 +1576,13 @@ export class SimulationManager {
 
     /**
      * Completely restarts the simulation, re-initialising the galaxy and active engine.
+     * @param seed - Realization to load. Omitted - the Restart button, an engine-switch
+     *   clamp - draws a fresh one, so a plain restart is a genuinely new galaxy.
      */
-    async restart() {
+    async restart(seed?: number) {
+        // ?? not ||: restart(0) must load seed 0, not draw randomly.
+        this.setSeed(seed ?? randomUint32());
+
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = 0;

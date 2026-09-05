@@ -28,18 +28,17 @@ import {
     DISK_INNER_RADIUS,
     GALAXY_RADIUS,
 } from '../../src/state/SimulationManager';
-import { mulberry32 } from '../utils/rng';
 
-// Default seed for the injected RNG. initGalaxy() samples the disk through the
-// manager's RNG field, which defaults to Math.random - so without a
-// seed the realized disk (and hence the measured rotation curve and Omega_max)
-// varies every run, making the orbital limit non-deterministic. Seeding it pins
-// every derived quantity so the tight close-encounter assertion is stable.
+// Seed for the realization under test. initGalaxy() samples the disk through the
+// manager's RNG, so without a fixed seed the realized disk (and hence the measured
+// rotation curve and Omega_max) varies every run, making the orbital limit
+// non-deterministic. Pinning it stabilises every derived quantity, so the tight
+// close-encounter assertion holds.
 const SEED = 0x71e57e9;
 
-// Reaches the private analytic field + measured rotation-curve internals + the
-// injectable RNG field (TS `private` is compile-time only) so the tests can
-// deterministically mirror the dt limits.
+// Reaches the private analytic field + measured rotation-curve internals
+// (TS `private` is compile-time only) so the tests can deterministically mirror
+// the dt limits.
 interface AdaptiveInternals {
     radialAcc(r: number): number;
     rotCurveAcc: Float64Array;
@@ -48,7 +47,6 @@ interface AdaptiveInternals {
     vCircAt(r: number): number;
     effectiveSoftening(): number;
     selfGravActiveCount(): number;
-    rng: () => number;
 }
 
 beforeEach(() => {
@@ -59,8 +57,10 @@ function makeSim(mode: 'accretion' | 'galaxy', count = 1500, seed = SEED) {
     const sim = new SimulationManager();
     sim.params.count = count;
     sim.params.preset = mode;
-    // Inject before initGalaxy() - that is where the disk is sampled.
-    (sim as unknown as AdaptiveInternals).rng = mulberry32(seed);
+    // Seed before initGalaxy() - that is where the disk is sampled. Must go through
+    // setSeed: initGalaxy() re-derives the RNG from currentSeed, so a direct rng
+    // assignment would be overwritten and silently ignored.
+    sim.setSeed(seed);
     return sim;
 }
 
