@@ -15,8 +15,10 @@ const GPU_ALLOWLIST = /webgpu|gpu|adapter|device|wgsl/i;
 /** Minimal shape of the manager we expose on `window.__sim` for these tests. */
 interface SimHandle {
     state: { positionX: Float32Array };
-    params: { engineType: string };
+    params: { engineType: string; count: number; isPaused: boolean };
     workerBridge: { getCompletedSteps(): number } | null;
+    currentSeed: number;
+    initGalaxy(): void;
 }
 
 /** Reads `state.positionX[i]` from the live manager (null if not yet available). */
@@ -27,9 +29,12 @@ function samplePosition(page: Page, i: number): Promise<number | null> {
     }, i);
 }
 
-/** Navigates to the sim and waits for it to boot (manager exposed + a live FPS reading). */
-async function bootSim(page: Page): Promise<void> {
-    await page.goto('/sim.html');
+/**
+ * Navigates to the sim and waits for it to boot (manager exposed + a live FPS reading).
+ * @param path - Where to boot; defaults to a bare sim. Pass a permalink to boot from one.
+ */
+async function bootSim(page: Page, path = '/sim.html'): Promise<void> {
+    await page.goto(path);
     await page.waitForFunction(() => '__sim' in window, undefined, { timeout: 15_000 });
     // #tel-fps starts at "--" and becomes a positive number once the loop is running.
     await expect
@@ -190,4 +195,71 @@ test('star-count input clamps to the brute-force cap', async ({ page }) => {
     await stars.dispatchEvent('change');
 
     await expect(stars).toHaveValue('20000');
+});
+
+// A CPU engine keeps these cases off the GPU path, which headless CI cannot run.
+const PERMALINK = '/sim.html#s=12345&n=5000&e=barnes&p=galaxy&g=1&dm=250';
+
+test('a permalink applies its seed, count and engine at boot', async ({ page }) => {
+    await bootSim(page, PERMALINK);
+
+    expect(await page.evaluate(() => (window as unknown as { __sim: SimHandle }).__sim.currentSeed)).toBe(12345);
+    expect(await page.evaluate(() => (window as unknown as { __sim: SimHandle }).__sim.params.count)).toBe(5000);
+    await expect(page.locator('#ui-engine')).toHaveValue('barnes');
+});
+
+/**
+ * Reads a particle's *initial* position for the seed the page booted with.
+ *
+ * The live position cannot be sampled directly: by the time boot is observable the loop
+ * has been stepping for an arbitrary number of frames, so two loads would be compared at
+ * two different simulated times and would differ however correct the seeding is. Pausing
+ * and re-initialising inside a single evaluate is synchronous, so no frame can interleave
+ * and the result is the t=0 realization of `currentSeed` - which is exactly what a
+ * permalink promises to reproduce.
+ */
+function sampleInitialPosition(page: Page, i: number): Promise<number> {
+    return page.evaluate((idx) => {
+        const sim = (window as unknown as { __sim: SimHandle }).__sim;
+        sim.params.isPaused = true;
+        sim.initGalaxy();
+        return sim.state.positionX[idx];
+    }, i);
+}
+
+test('the same permalink reproduces the same initial conditions across loads', async ({ page }) => {
+    // The one thing no unit test can reach: the whole chain, twice, in a real
+    // browser - URL hash parsed, seed applied pre-init, realization reproduced.
+    await bootSim(page, PERMALINK);
+    const first = await sampleInitialPosition(page, 42);
+
+    await bootSim(page, PERMALINK);
+
+    expect(await sampleInitialPosition(page, 42)).toBe(first);
+});
+
+test('Share copies a link carrying the running seed', async ({ page }) => {
+    await bootSim(page, PERMALINK);
+
+    await page.click('#ui-share');
+
+    await expect(page.locator('#engine-banner')).toBeVisible();
+    expect(await page.evaluate(() => location.hash)).toContain('s=12345');
+});
+
+test('Restart draws a fresh realization', async ({ page }) => {
+    await bootSim(page, PERMALINK);
+    const linked = await sampleInitialPosition(page, 42);
+    await page.evaluate(() => {
+        (window as unknown as { __sim: SimHandle }).__sim.params.isPaused = false;
+    });
+
+    await page.click('#ui-restart');
+    await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __sim: SimHandle }).__sim.currentSeed))
+        .not.toBe(12345);
+
+    // Compare initial conditions, not live positions: those drift with time and would
+    // differ even if restart had reloaded the very same seed.
+    expect(await sampleInitialPosition(page, 42)).not.toBe(linked);
 });

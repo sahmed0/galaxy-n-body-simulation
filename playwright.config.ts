@@ -22,6 +22,10 @@ export default defineConfig({
     use: {
         baseURL: 'http://localhost:4173',
         trace: 'on-first-retry',
+        // The Share button writes to the clipboard. localhost is already a secure context
+        // so navigator.clipboard exists; this grants the permission it would otherwise be
+        // denied, which would silently push the button onto its manual-copy fallback.
+        permissions: ['clipboard-read', 'clipboard-write'],
     },
     projects: [
         { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
