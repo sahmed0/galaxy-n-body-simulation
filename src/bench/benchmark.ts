@@ -3,6 +3,7 @@
  */
 import { SimulationManager, ENGINE_MAX_COUNT } from '../state';
 import { PhysicsState } from '../physics';
+import { mulberry32 } from '../utils';
 import type { EngineType, PhysicsParams } from '../physics';
 
 /**
@@ -27,6 +28,15 @@ interface BenchResult {
 const WARMUP_MS = 2000;
 const MEASURE_MS = 5000;
 
+/**
+ * Fixed seed for every swept config. restart() draws a fresh seed by default, which would
+ * hand each config a different realization and make the timings incomparable - the whole
+ * point of the sweep is that only the engine and N vary. Note an identical seed still
+ * yields different initial conditions across different N (the count drives the number of
+ * draws); it is engines *at the same N* that this makes comparable.
+ */
+const BENCH_SEED = 0x5eed1234;
+
 function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -34,18 +44,6 @@ function sleep(ms: number): Promise<void> {
 function mean(xs: number[]): number {
     if (xs.length === 0) return 0;
     return xs.reduce((a, b) => a + b, 0) / xs.length;
-}
-
-/** Small deterministic PRNG so bench-internal ICs (the parity check) are reproducible. */
-function mulberry32(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a |= 0;
-        a = (a + 0x6d2b79f5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
 }
 
 /**
@@ -161,7 +159,7 @@ export function initBench(sim: SimulationManager): void {
 
             sim.params.engineType = cfg.engine;
             sim.params.count = Math.min(cfg.n, ENGINE_MAX_COUNT[cfg.engine]);
-            await sim.restart();
+            await sim.restart(BENCH_SEED);
 
             // The GPU engine falls back to a CPU engine when no device exists.
             if (cfg.engine === 'webgpu' && (!sim.webGpuEngine || sim.engine !== sim.webGpuEngine)) {
@@ -191,7 +189,7 @@ export function initBench(sim: SimulationManager): void {
         if (!sim.webGpuEngine || sim.engine !== sim.webGpuEngine) {
             sim.params.engineType = 'webgpu';
             sim.params.count = 4096;
-            await sim.restart();
+            await sim.restart(BENCH_SEED);
         }
         const gpu = sim.webGpuEngine;
         if (!gpu || sim.engine !== gpu) {
