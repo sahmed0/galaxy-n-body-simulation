@@ -77,7 +77,7 @@ export function pairwiseAccel(
 /**
  * Dark-matter halo acceleration on a body at `(x, y)`: an isothermal halo pulling
  * inward toward the origin. Magnitude `dmStrength² · r / (r² + rcore²)`, directed
- * along `-r̂`. Writes the **acceleration** into `out` (no `dt`).
+ * along `-(x, y)/r`. Writes the **acceleration** into `out` (no `dt`).
  *
  * The radial `dist` cancels analytically, leaving only squared terms (no sqrt):
  * `aBase = dmStrength² / (r² + rcore²)`, contributing `-x·aBase`, `-y·aBase`.
@@ -104,7 +104,7 @@ export function darkMatterAccel(
 /**
  * Supermassive-black-hole central acceleration on a body at `(x, y)` from a point
  * mass at the origin, with Plummer softening. Magnitude `G·M / (r² + ε²)^{3/2} · r`,
- * directed inward along `-r̂`. Writes the **acceleration** into `out` (no `dt`).
+ * directed inward along `-(x, y)/r`. Writes the **acceleration** into `out` (no `dt`).
  *
  * `distSq = r² + ε²`, `dist = √distSq`, `aBase = G·M / (distSq·dist)`, contributing
  * `-x·aBase`, `-y·aBase`. As `ε → 0` this is Keplerian: `|a|·r² → G·M`.

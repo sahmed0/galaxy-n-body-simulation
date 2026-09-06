@@ -4,8 +4,8 @@
  * Full-sim conservation check for a pure brute-force run (no DM halo, no SMBH, no
  * active/passive split — `leapfrogStep` only ever calls `pairwiseAccel`, so those
  * extra terms are simply absent here). The shared pairwise kernel kicks every body
- * with `G·mass[j]·r̂/r²` and the engine sums each pair independently; Newton's third
- * law then says the per-pair kicks `mᵢaᵢ` / `mⱼaⱼ` cancel, so:
+ * with `G·mass[j]·(dx, dy)/r³` and the engine sums each pair independently;
+ * Newton's third law then says the per-pair kicks `mᵢaᵢ` / `mⱼaⱼ` cancel, so:
  *   1. total linear momentum `P = Σ mᵢvᵢ` is conserved (to roundoff), and
  *   2. the centre of mass travels in a straight line at `v_com = P/M` — with zero
  *      net momentum it does not move at all.
