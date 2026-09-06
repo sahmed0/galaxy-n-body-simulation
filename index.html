@@ -851,9 +851,9 @@
           <strong>Brute Force Engine:</strong> Implements an $O(N^2)$
           direct-sum calculation using kick-drift <em>leapfrog</em> integration
           (symplectic, with velocities staggered half a step ahead of positions).
-          It deliberately computes each $i$&ndash;$j$ pair twice rather than
+          It deliberately computes each $i$-$j$ pair twice rather than
           exploiting Newton's Third Law, so that Brute Force and Barnes-Hut share a
-          single force kernel (<code>pairwiseAccel</code>) &mdash; trading a 2&times;
+          single force kernel (<code>pairwiseAccel</code>) - trading a 2&times;
           arithmetic cost for one identical, testable force law across engines.
         </li>
         <li>

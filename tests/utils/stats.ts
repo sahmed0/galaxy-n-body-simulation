@@ -21,7 +21,7 @@ export function salpeterCDF(m: number, mMin: number, mMax: number, p: number): n
 }
 
 /**
- * One-sample Kolmogorov–Smirnov statistic D = sup_x |F_n(x) − F(x)| between an
+ * One-sample Kolmogorov-Smirnov statistic D = sup_x |F_n(x) − F(x)| between an
  * empirical sample and a reference CDF. Samples are sorted ascending; for the
  * i-th order statistic (1-based) the empirical CDF jumps from (i−1)/N to i/N, so
  * the per-point deviation is max(i/N − F(x_i), F(x_i) − (i−1)/N).

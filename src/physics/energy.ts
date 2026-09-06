@@ -156,7 +156,7 @@ export function activeStart(params: EnergyParams): number {
 export class EnergyMonitor {
     /** Maximum samples retained by {@link history}; older samples are evicted. */
     static readonly RING_CAPACITY = 512;
-    /** Default per-chunk pair budget. ~500k pairs ≈ 1–2 ms of float64 work. */
+    /** Default per-chunk pair budget. ~500k pairs ≈ 1-2 ms of float64 work. */
     static readonly DEFAULT_MAX_PAIRS = 500_000;
 
     private _lastSample: EnergySample | null = null;

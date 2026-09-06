@@ -2,12 +2,12 @@
  * Copyright (c) 2026 Sajid Ahmed
  *
  * Full-sim conservation check for a pure brute-force run (no DM halo, no SMBH, no
- * active/passive split — `leapfrogStep` only ever calls `pairwiseAccel`, so those
+ * active/passive split - `leapfrogStep` only ever calls `pairwiseAccel`, so those
  * extra terms are simply absent here). The shared pairwise kernel kicks every body
  * with `G·mass[j]·(dx, dy)/r³` and the engine sums each pair independently;
  * Newton's third law then says the per-pair kicks `mᵢaᵢ` / `mⱼaⱼ` cancel, so:
  *   1. total linear momentum `P = Σ mᵢvᵢ` is conserved (to roundoff), and
- *   2. the centre of mass travels in a straight line at `v_com = P/M` — with zero
+ *   2. the centre of mass travels in a straight line at `v_com = P/M` - with zero
  *      net momentum it does not move at all.
  *
  * Both are asserted relative over a long many-body run. There is no analytic
@@ -17,7 +17,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeSoA, leapfrogStep, type Body, type SoAState } from '../utils/soa';
 
-/** Deterministic mulberry32 PRNG — keeps the cloud reproducible without the rng util. */
+/** Deterministic mulberry32 PRNG - keeps the cloud reproducible without the rng util. */
 function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
@@ -84,7 +84,7 @@ const N = 30;
 const R = 8.0;
 const V_SCALE = 0.3;
 
-describe('Full brute-force run — linear momentum & COM conservation', () => {
+describe('Full brute-force run - linear momentum & COM conservation', () => {
     it('conserves total linear momentum to roundoff over a long run', () => {
         const bulk = { x: 0.7, y: -0.4 };
         const state = makeSoA(makeCloud(N, 0x1234, R, V_SCALE, bulk));

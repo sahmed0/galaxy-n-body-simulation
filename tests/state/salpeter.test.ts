@@ -5,7 +5,7 @@
  *
  * Verifies that {@link SimulationManager.sampleSalpeterMass} draws stellar masses
  * from the Salpeter IMF over [0.1, 50] (exponent p = 1.35). With a seeded RNG
- * injected (`mulberry32`), the sampler is deterministic, so a Kolmogorov–Smirnov
+ * injected (`mulberry32`), the sampler is deterministic, so a Kolmogorov-Smirnov
  * goodness-of-fit test against the analytic Salpeter CDF is non-flaky in CI.
  *
  * The RNG is a private instance field defaulting to Math.random; tests reach it

@@ -3,7 +3,7 @@
  *
  * QuadTree centre-of-mass invariants. Barnes-Hut accuracy rests entirely on
  * each node carrying the correct aggregate mass + mass-weighted centre of mass, so this
- * tests `calculateMassDistribution` directly through the public API — no engine, no theta,
+ * tests `calculateMassDistribution` directly through the public API - no engine, no theta,
  * no force law. Three structural invariants:
  *   1. root.totalMass == Σ mass            (conservation of mass under aggregation)
  *   2. root COM       == mass-weighted mean of every particle
@@ -14,7 +14,7 @@
  *
  * Pool gotcha (recorded in PROGRESS): `QuadTree.pool` is a *static* array. Subdivision
  * pulls child nodes from it and `free()` returns them, reset, for the next test. So every
- * test frees its root in a `finally` / afterEach — otherwise a later test's `create` could
+ * test frees its root in a `finally` / afterEach - otherwise a later test's `create` could
  * hand back a node still wired into this test's tree. `create`/`reset` fully reinitialise a
  * pooled node, so freeing-then-rebuilding is the correct isolation, not a pool .length=0
  * (the field is private and inaccessible anyway).
@@ -23,7 +23,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { QuadTree, type Boundary } from '../../src/physics/QuadTree';
 import { PhysicsState } from '../../src/physics/PhysicsState';
 
-/** Deterministic mulberry32 PRNG — reproducible cloud without the rng util. */
+/** Deterministic mulberry32 PRNG - reproducible cloud without the rng util. */
 function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
@@ -131,7 +131,7 @@ describe('QuadTree centre-of-mass aggregation invariants', () => {
                 internalNodesChecked++;
                 const children = [node.northwest!, node.northeast!, node.southwest!, node.southeast!];
                 // Replicate calculateMassDistribution's recurrence EXACTLY, including the
-                // `child.totalMass > 0` guard — empty children contribute nothing. Same float64
+                // `child.totalMass > 0` guard - empty children contribute nothing. Same float64
                 // arithmetic in the same order ⇒ bit-identical, so the tolerance is just guarding
                 // against accidental reordering, not real numeric drift.
                 let massSum = 0, wx = 0, wy = 0;

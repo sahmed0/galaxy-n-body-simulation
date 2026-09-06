@@ -27,7 +27,7 @@ import { BarnesHutEngine, PhysicsState } from '../../src/physics';
 import type { PhysicsParams } from '../../src/physics/types';
 import { pairwiseAccel, type Accel } from '../../src/physics/kernels';
 
-/** Deterministic mulberry32 PRNG — keeps the cloud reproducible without the rng util. */
+/** Deterministic mulberry32 PRNG - keeps the cloud reproducible without the rng util. */
 function mulberry32(seed: number): () => number {
     let a = seed >>> 0;
     return () => {
@@ -77,7 +77,7 @@ function makeState(cloud: CloudBody[]): PhysicsState {
     return state;
 }
 
-/** Base params: no BH, no DM, no active/passive — pure N-body so only theta varies. */
+/** Base params: no BH, no DM, no active/passive - pure N-body so only theta varies. */
 function makeParams(theta: number): PhysicsParams {
     return {
         gravity: G,
@@ -122,7 +122,7 @@ beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
 });
 
-describe('Barnes-Hut vs brute force — shared pairwise kernel + theta error envelope', () => {
+describe('Barnes-Hut vs brute force - shared pairwise kernel + theta error envelope', () => {
     const cloud = makeCloud();
 
     // Brute reference: float64 ground truth from the exact float32 positions the engine sees.
@@ -150,7 +150,7 @@ describe('Barnes-Hut vs brute force — shared pairwise kernel + theta error env
 
     it('keeps the RMS relative force error within its per-theta envelope', () => {
         // Measured RMS at SEED=0x5eed, N=256, ε=0.5:
-        //   theta=0.2 ≈ 1.3e-4, theta=0.5 ≈ 4.3e-3, theta=1.0 ≈ 3.5e-2 — all leave margin against seed/refactor float noise.
+        //   theta=0.2 ≈ 1.3e-4, theta=0.5 ≈ 4.3e-3, theta=1.0 ≈ 3.5e-2 - all leave margin against seed/refactor float noise.
         expect(err.get(0.2)!.rms).toBeLessThan(0.005);
         expect(err.get(0.5)!.rms).toBeLessThan(0.03);
         expect(err.get(1.0)!.rms).toBeLessThan(0.1);

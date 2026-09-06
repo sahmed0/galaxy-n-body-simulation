@@ -44,7 +44,7 @@ function mag(a: { ax: number; ay: number }): number {
     return Math.hypot(a.ax, a.ay);
 }
 
-describe('smbhAccel — point-mass central force with Plummer softening', () => {
+describe('smbhAccel - point-mass central force with Plummer softening', () => {
     const G = 2.5;
     const M = 137.0;
     const eps = 0.3;
@@ -92,7 +92,7 @@ describe('smbhAccel — point-mass central force with Plummer softening', () => 
     });
 });
 
-describe('darkMatterAccel — isothermal halo', () => {
+describe('darkMatterAccel - isothermal halo', () => {
     const dmStrength = 4.0;
     const rcore = 50.0;
 
@@ -130,7 +130,7 @@ describe('darkMatterAccel — isothermal halo', () => {
     });
 });
 
-describe('pairwiseAccel — Plummer softening limits', () => {
+describe('pairwiseAccel - Plummer softening limits', () => {
     const G = 1.5;
     const mj = 10.0;
 
