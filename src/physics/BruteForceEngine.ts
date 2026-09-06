@@ -2,7 +2,8 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { PhysicsState } from './PhysicsState';
-import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SharedStateEngine, PhysicsParams, InitialConditionType } from './types';
+import { pairwiseAccel, darkMatterAccel, smbhAccel, applyKick, applyDrift, type Accel } from './kernels';
 
 /**
  * Handles the physics simulation for the N-body system.
@@ -12,40 +13,32 @@ import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types
  * energy-stable. The half-step offset assumes a fixed dt; if dt changes at
  * runtime the velocities must be re-staggered (see SimulationManager.softResetVelocities).
  */
-export class BruteForceEngine implements PhysicsEngine {
-    private state!: PhysicsState;
+export class BruteForceEngine implements SharedStateEngine {
+    public readonly kind = 'shared-state' as const;
+    public state!: PhysicsState;
+
+    // Reused across every kernel call in a step so the O(N²) force loop allocates
+    // nothing in steady state. Safe: each engine steps single-threaded, one call at a time.
+    private scratchAccel: Accel = { ax: 0, ay: 0 };
+
+    // Exact pairwise-interaction count evaluated by the most recent step, for telemetry.
+    private lastInteractionCount = 0;
 
     /**
-     * Constructs the BruteForceEngine and immediately evaluates the provided state.
-     * @param state - The complete structure of data arrays that track simulation elements.
+     * Adopts the given state as the engine's working set.
+     * @param state - The SoA state this engine steps in place.
      */
     constructor(state: PhysicsState) {
         this.init(state.n, state);
     }
 
     /**
-     * Evaluates and updates the baseline state inside the engine.
-     * @param _n - The unused explicit particle count (handled via state inspection).
-     * @param initialConditions - The structure tracking starting attributes for all bodies.
+     * Adopts the given state as the engine's working set.
+     * @param _n - Total body count (unused; the engine reads `state.n` directly).
+     * @param initialConditions - The state this engine steps in place.
      */
     public init(_n: number, initialConditions: InitialConditionType): void {
         this.state = initialConditions;
-    }
-
-    /**
-     * Inspects the stored horizontal positions within the active internal state.
-     * @returns The raw Float32Array mapped to X-coordinate memory space.
-     */
-    public getPositions(): Float32Array {
-        return this.state.positionX; // Note: This only returns X. The interface is slightly ambiguous for SoA.
-    }
-
-    /**
-     * Inspects the horizontal velocities actively iterating over time inside the engine.
-     * @returns The associated Float32Array measuring the X-axis velocity data for all managed elements.
-     */
-    public getVelocities(): Float32Array {
-        return this.state.velocityX;
     }
 
     /**
@@ -58,16 +51,24 @@ export class BruteForceEngine implements PhysicsEngine {
     }
 
     /**
+     * Exact pairwise-interaction count the most recent step evaluated.
+     * @returns Interactions from the last {@link step}.
+     */
+    public getLastInteractionCount(): number {
+        return this.lastInteractionCount;
+    }
+
+    /**
      * Updates the simulation by a time step `dt`.
      * Uses Leapfrog integration (v half-step ahead):
      * 1. Calculate a(t)
      * 2. v(t+dt/2) = v(t-dt/2) + a(t) * dt
      * 3. r(t+dt) = r(t) + v(t+dt/2) * dt
      * 
-     * @param dt - The time step representing duration elapsed for numeric iteration logic.
-     * @param params - Configuration parameter blocks evaluating spatial phenomena like Dark Matter.
+     * @param dt - The time step to advance by.
+     * @param params - The physical parameters (gravity, softening, halo, SMBH, …).
      */
-    public update(dt: number, params: PhysicsParams): void {
+    public step(dt: number, params: PhysicsParams): void {
         // 1. Calculate a(t) and apply to v immediately
         this.calculateForcesAndAddKicks(dt, params);
 
@@ -82,17 +83,15 @@ export class BruteForceEngine implements PhysicsEngine {
         // its pinned, inert marker: never integrate it so it stays at the origin.
         const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
         for (let i = start; i < n; i++) {
-            px[i] += vx[i] * dt;
-            py[i] += vy[i] * dt;
+            applyDrift(px, py, vx, vy, i, dt);
         }
     }
 
     /**
-     * Brute-force O(N^2) gravity calculation.
-     * Calculated acceleration is added directly to velocity.
-     * 
-     * @param dt - Numerical time duration for computing velocity modifiers based on active delta times.
-     * @param params - Simulation constants establishing baseline forces between multiple active and trailing bodies.
+     * Brute-force O(N^2) gravity: sums the pairwise, halo and SMBH accelerations and
+     * kicks each velocity by `accel * dt`.
+     * @param dt - The time step applied to each kick.
+     * @param params - The physical parameters governing the forces.
      */
     private calculateForcesAndAddKicks(dt: number, params: PhysicsParams): void {
         const n = this.state.n;
@@ -111,24 +110,26 @@ export class BruteForceEngine implements PhysicsEngine {
         // Start every pairwise/central loop at `start` so index 0 is left untouched.
         const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
 
-        // 1. Heavy <-> Heavy interactions (Newton's 3rd Law Optimisation: i < j)
-        for (let i = start; i < activeCount; i++) {
-            for (let j = i + 1; j < activeCount; j++) {
-                const dx = px[j] - px[i];
-                const dy = py[j] - py[i];
-                const distSq = dx * dx + dy * dy + softeningSq;
-                const dist = Math.sqrt(distSq);
-                const aBase = G / (distSq * dist);
-
-                // Acceleration on i due to j
-                const ai = aBase * mass[j] * dt;
-                vx[i] += ai * dx;
-                vy[i] += ai * dy;
-
-                // Acceleration on j due to i (Newton's 3rd Law: opposite force)
-                const aj = aBase * mass[i] * dt;
-                vx[j] -= aj * dx;
-                vy[j] -= aj * dy;
+        // 1. Heavy <-> Heavy interactions, via the shared pairwise-accel kernel.
+        // Each heavy body gets the full Newtonian sum over the other heavies; the
+        // kernel returns acceleration (no dt/mass[i]) and the integrator applies dt.
+        // Views over [start, activeCount) exclude the pinned BH (index 0) as both a
+        // source and a receiver and cap the sum at the active set, matching the old
+        // loop bounds. (Drops the i<j symmetric optimisation in exchange for a single
+        // force law shared with Barnes-Hut.)
+        const hn = activeCount - start;
+        // Exact pairwise count: heavy↔heavy (each of hn heavies sums over the other hn−1)
+        // plus heavy→light (hn heavies acting one-way on the n−activeCount passive tracers;
+        // naturally 0 when active/passive is off, since activeCount == n there).
+        this.lastInteractionCount = hn * (hn - 1) + hn * (n - activeCount);
+        if (hn > 1) {
+            const hx = px.subarray(start, activeCount);
+            const hy = py.subarray(start, activeCount);
+            const hm = mass.subarray(start, activeCount);
+            const acc = this.scratchAccel;
+            for (let k = 0; k < hn; k++) {
+                pairwiseAccel(hx, hy, hm, hn, k, G, softeningSq, acc);
+                applyKick(vx, vy, k + start, acc.ax, acc.ay, dt);
             }
         }
 
@@ -157,37 +158,22 @@ export class BruteForceEngine implements PhysicsEngine {
         const dmStrength = params.dmStrength || 0;
         if (dmStrength > 0) {
             const dmCoreRadius = params.dmCoreRadius || 50.0;
-            const dmStrengthSq = dmStrength * dmStrength;
-            const dmCoreRadiusSq = dmCoreRadius * dmCoreRadius;
-
+            const acc = this.scratchAccel;
             for (let i = start; i < n; i++) {
-                const pix = px[i];
-                const piy = py[i];
-                const distSq = pix * pix + piy * piy;
-
-                // Mathematical optimisation: `dist` natively cancels out
-                // resulting in purely squared variables and zero square roots.
-                const aDM_base = dmStrengthSq / (distSq + dmCoreRadiusSq);
-                vx[i] -= pix * aDM_base * dt;
-                vy[i] -= piy * aDM_base * dt;
+                darkMatterAccel(px[i], py[i], dmStrength, dmCoreRadius, acc);
+                applyKick(vx, vy, i, acc.ax, acc.ay, dt);
             }
         }
 
         // 4. Supermassive Black Hole (SMBH) Central Force
         const smbhMass = params.blackHoleMass || 0;
         if (smbhMass > 0) {
-            const smbhSofteningSq = (params.blackHoleSoftening || params.softening) ** 2;
+            const smbhSoftening = params.blackHoleSoftening || params.softening;
             // Index 0 is the BH itself (pinned at origin); skip it via `start`.
+            const acc = this.scratchAccel;
             for (let i = start; i < n; i++) {
-                const pix = px[i];
-                const piy = py[i];
-                const distSq = pix * pix + piy * piy + smbhSofteningSq;
-                const dist = Math.sqrt(distSq);
-
-                // Force perfectly directed towards the central mass at (0,0)
-                const aSMBH = (G * smbhMass * dt) / (distSq * dist);
-                vx[i] -= aSMBH * pix;
-                vy[i] -= aSMBH * piy;
+                smbhAccel(px[i], py[i], G, smbhMass, smbhSoftening, acc);
+                applyKick(vx, vy, i, acc.ax, acc.ay, dt);
             }
         }
     }

@@ -16,10 +16,11 @@ export class PhysicsState {
   public colors: Float32Array;
 
   /**
-   * Initialises standard non-shared array buffers representing particle coordinates.
-   * Optionally accepts references to memory slices if part of a multithreaded pool.
-   * @param n - Particle initialisation boundary count constraint.
-   * @param shared - Config parameter passing reference views from external Shared buffers.
+   * Allocates the per-body arrays. If `shared` is given, the state instead adopts
+   * those already-allocated views (the SharedArrayBuffer path used by the worker),
+   * so main thread and worker read and write the same memory.
+   * @param n - Number of bodies.
+   * @param shared - Optional externally-owned views to adopt instead of allocating.
    */
   constructor(n: number, shared?: {
     positionX: Float32Array,
@@ -48,10 +49,11 @@ export class PhysicsState {
   }
 
   /**
-   * Resets the state with a new number of particles.
-   * Warning: This does NOT resize the inner SharedArrayBuffer if one is used.
-   * Logic requiring a resize must destroy and recreate the parent PhysicsMemory constraint.
-   * @param n - Expanded or narrowed structural array length sequence identifier.
+   * Reallocates all arrays for a new body count.
+   * Warning: this allocates fresh (non-shared) arrays and does NOT resize any
+   * backing SharedArrayBuffer. A shared-memory resize must instead recreate the
+   * owning PhysicsMemory.
+   * @param n - New number of bodies.
    */
   public resize(n: number): void {
     // Throw error or handle properly if using shared memory, as we can't resize a SAB view easily without reallocating everything.

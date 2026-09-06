@@ -1,6 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
-
 /* Copyright (c) 2026 Sajid Ahmed */
+/* Fonts (IBM Plex Sans, Space Grotesk) are self-hosted via @fontsource, imported from the
+   TypeScript entry points (simulation.ts, landing.ts) so nothing is fetched from a CDN. */
 :root {
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
     line-height: 1.6;

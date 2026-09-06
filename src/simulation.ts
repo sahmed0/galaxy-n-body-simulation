@@ -1,11 +1,23 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import { SimulationManager } from './state';
+import { SimulationManager, presetDmDefault } from './state';
 import { setupUI, updateTelemetry, setupInteractions } from './ui';
+import { parsePermalink, randomUint32 } from './utils';
 import './global.css';
 import './style.css';
 import './ui/ui.css';
+// Self-hosted fonts no runtime CDN under COEP.
+import '@fontsource/ibm-plex-sans/300.css';
+import '@fontsource/ibm-plex-sans/400.css';
+import '@fontsource/ibm-plex-sans/500.css';
+import '@fontsource/ibm-plex-sans/600.css';
+import '@fontsource/space-grotesk/300.css';
+import '@fontsource/space-grotesk/400.css';
+import '@fontsource/space-grotesk/500.css';
+import '@fontsource/space-grotesk/600.css';
+import '@fontsource/space-grotesk/700.css';
+import '@kiwicarbon/assets/dist/kiwi.css';
 
 /**
  * Draws a static deep space background with pinpoint stars on the bg-canvas.
@@ -16,6 +28,8 @@ function drawSpaceBackground() {
   const ctx = bgCanvas.getContext('2d');
   if (!ctx) return;
 
+  // Deliberately drawn at 1x device pixels (no DPR scaling): this is a blurred, static
+  // starfield backdrop where per-pixel crispness is imperceptible and the extra fill cost isn't worth it.
   const width = window.innerWidth * 1.2;
   const height = window.innerHeight * 1.2;
   bgCanvas.width = width;
@@ -35,14 +49,10 @@ function drawSpaceBackground() {
   }
 }
 
-// Enforce Cross-Origin Isolation (COOP/COEP) to permit zero-copy `SharedArrayBuffer` memory allocations.
-// Web Workers require this security context to prevent high-res timer timing attacks (e.g., Spectre).
-if (!crossOriginIsolated) {
-  const errorMsg = 'SharedArrayBuffer is not defined. This site requires Cross-Origin Isolation (COOP/COEP headers). verify that the server is sending "Cross-Origin-Opener-Policy: same-origin" and "Cross-Origin-Embedder-Policy: require-corp".';
-  console.error(errorMsg);
-  alert(errorMsg);
-  throw new Error(errorMsg);
-}
+// Cross-Origin Isolation enables zero-copy SharedArrayBuffer, which the worker engine needs.
+// The app runs fine without it: PhysicsMemory falls back to a plain ArrayBuffer and the worker
+// option is disabled. Log the state for diagnostics only - never block startup.
+console.info(`Cross-origin isolated: ${crossOriginIsolated}`);
 
 const CANVAS_ID = 'sim-canvas';
 
@@ -56,15 +66,66 @@ async function startApp() {
 
   const simManager = new SimulationManager();
 
+  // A permalink pins the realization and the parameters that shape it; anything absent
+  // or malformed keeps its default. This must run before init(): initGalaxy() reads
+  // count/preset and init() selects the engine, so none of it can be applied afterwards.
+  // A permalinked engine needs no special handling - it lands in params pre-init and the
+  // existing WebGPU-fallback path in init() covers it exactly as it covers the default.
+  // The hash is left on the URL so the link stays re-copyable. Camera is not encoded.
+  const link = parsePermalink(location.hash);
+  // Explicit `!== undefined` throughout: seed 0 and dmStrength 0 are both legitimate
+  // values and both falsy.
+  if (link.engine !== undefined) simManager.params.engineType = link.engine;
+  if (link.count !== undefined) simManager.params.count = link.count;
+  if (link.preset !== undefined) {
+    simManager.params.preset = link.preset;
+    // Mirror the preset <select> handler, which resets the halo to the preset's default
+    // on every change. Without this a hand-written #p=accretion with no dm= boots an
+    // accretion disk inside the galaxy's halo - a state the UI cannot produce. An
+    // explicit dm= still wins: it is applied after this.
+    simManager.params.dmStrength = presetDmDefault(link.preset);
+  }
+  if (link.gravity !== undefined) simManager.params.gravity = link.gravity;
+  if (link.dmStrength !== undefined) simManager.params.dmStrength = link.dmStrength;
+  simManager.setSeed(link.seed ?? randomUint32());
+
   // Set telemetry callback before init so it's ready, but it's used in loop
   simManager.onTelemetry = updateTelemetry;
 
+  // Parallax the background canvas against the camera each frame. Kept in the entry
+  // layer (not SimulationManager) so the state layer never touches the DOM.
+  const bgCanvas = document.getElementById('bg-canvas');
+  if (bgCanvas) {
+    simManager.onFrame = (sim) => {
+      const camera = sim.renderer.camera;
+      const pPanFactor = 0.05;
+      const pZoomFactor = 0.15;
+      let bgScale = 1.0 + (camera.zoom - 1.0) * pZoomFactor;
+      if (bgScale < 0.83) bgScale = 0.83;
+
+      const bgX = camera.x * pPanFactor;
+      const bgY = camera.y * camera.tilt * pPanFactor;
+      bgCanvas.style.transform = `translate(${bgX}px, ${bgY}px) scale(${bgScale})`;
+    };
+  }
+
   await simManager.init(CANVAS_ID);
+
+  // Expose the manager for the Playwright smoke tests (and handy for manual console
+  // debugging). Deliberate and inert - nothing in the app reads it back.
+  (window as unknown as { __sim: SimulationManager }).__sim = simManager;
 
   setupUI(simManager);
   setupInteractions(simManager);
 
   simManager.startLoop();
+
+  // Opt-in performance harness: `sim.html?bench` pulls in the bench overlay as a
+  // separate async chunk, keeping it out of the main bundle for normal visitors.
+  if (new URLSearchParams(location.search).has('bench')) {
+    const { initBench } = await import('./bench/benchmark');
+    initBench(simManager);
+  }
 }
 
 startApp();

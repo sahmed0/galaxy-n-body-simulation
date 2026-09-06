@@ -28,6 +28,9 @@ export class CanvasRenderer {
     /** Current height of the canvas. */
     private height: number;
 
+    /** Device-pixel ratio applied to the backing store, capped at 2 to bound fill cost on mobile. */
+    private dpr: number = 1;
+
     /** The mass threshold determining when to render a particle as larger. */
     public massThreshold: number = 0;
 
@@ -36,6 +39,15 @@ export class CanvasRenderer {
 
     /** The quad tree spatial partition representing the current frame. */
     public quadTree: QuadTree | null = null;
+
+    /**
+     * Particle indices grouped by (quantized) CSS colour, so `fillStyle` is set once
+     * per colour instead of once per particle. Colours are static after `initGalaxy`.
+     */
+    private groups: Map<string, number[]> = new Map();
+
+    /** The state the colour groups were built from; a restart replaces the state, triggering a rebuild. */
+    private groupsState: PhysicsState | null = null;
 
     /**
      * Initialises the canvas renderer with a given canvas ID and physics state.
@@ -64,10 +76,15 @@ export class CanvasRenderer {
      * Resizes the canvas context and camera viewport to match the active window dimensions.
      */
     private resize(): void {
+        // this.width/height stay in CSS pixels (the Camera works in CSS-pixel space). The backing
+        // store is scaled by dpr for crisp HiDPI rendering; render() maps CSS->device via setTransform.
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.width = window.innerWidth;
         this.height = window.innerHeight;
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
+        this.canvas.width = Math.round(this.width * this.dpr);
+        this.canvas.height = Math.round(this.height * this.dpr);
+        this.canvas.style.width = this.width + 'px';
+        this.canvas.style.height = this.height + 'px';
         this.camera.updateViewport(this.width, this.height);
     }
 
@@ -99,6 +116,31 @@ export class CanvasRenderer {
     }
 
     /**
+     * (Re)builds the colour-index groups from the current state. Colours are written
+     * only by `initGalaxy`, so this runs once per state object (per restart), not per
+     * frame. Each channel is quantized to 4 bits, bounding distinct fillStyle values
+     * (and CSS strings) at 4096 while preserving the visible palette. Index 0 (the BH
+     * glow) is excluded; it is drawn separately.
+     */
+    private buildGroups(): void {
+        this.groups.clear();
+        const colors = this.state.colors;
+        const n = this.state.n;
+        for (let i = 1; i < n; i++) {
+            const r = (Math.floor(colors[i * 3 + 0] * 255) >> 4) << 4;
+            const g = (Math.floor(colors[i * 3 + 1] * 255) >> 4) << 4;
+            const b = (Math.floor(colors[i * 3 + 2] * 255) >> 4) << 4;
+            const key = `rgb(${r},${g},${b})`;
+            let group = this.groups.get(key);
+            if (!group) {
+                group = [];
+                this.groups.set(key, group);
+            }
+            group.push(i);
+        }
+    }
+
+    /**
      * Renders the current frame by clearing the canvas and painting all particles and optional debug data.
      */
     public render(): void {
@@ -109,7 +151,10 @@ export class CanvasRenderer {
         const w = this.width;
         const h = this.height;
 
-        // Prepare context for fresh frame rendering
+        // Prepare context for fresh frame rendering. The base transform maps CSS pixels to device
+        // pixels (dpr); clearRect in CSS coords therefore clears the full backing store, and
+        // camera.apply() composes its translate/scale on top of this via ctx.save().
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
         ctx.globalCompositeOperation = 'source-over';
         ctx.clearRect(0, 0, w, h);
 
@@ -127,45 +172,53 @@ export class CanvasRenderer {
         // Additive blending for glow
         ctx.globalCompositeOperation = 'lighter';
 
-        for (let i = 0; i < n; i++) {
-            const x = px[i];
-            const y = py[i];
+        // --- SUPERMASSIVE BLACK HOLE RENDER (index 0) ---
+        // Keep the high-quality render for the main attractor. Drawn once, not in a
+        // loop over every body.
+        if (n > 0) {
+            const x = px[0];
+            const y = py[0];
 
-            if (i === 0) {
-                // --- SUPERMASSIVE BLACK HOLE RENDER ---
-                // Keep the high-quality render for the main attractor
-                ctx.save();
-                ctx.globalCompositeOperation = 'source-over';
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
 
-                // 1. Accretion Disk / Light Bending (Glow around)
-                const grad = ctx.createRadialGradient(x, y, 2, x, y, 5);
-                grad.addColorStop(0, 'rgba(255, 251, 221, 1)'); // Event Horizon
-                grad.addColorStop(0.3, 'rgba(255, 251, 221, 1)'); // Inner hot disk
-                grad.addColorStop(0.5, 'rgba(255, 251, 221, 1)'); // Outer glow
-                grad.addColorStop(1, 'rgba(255, 251, 221, 0)');
+            // Accretion Disk / Light Bending (Glow around)
+            const grad = ctx.createRadialGradient(x, y, 2, x, y, 5);
+            grad.addColorStop(0, 'rgba(255, 251, 221, 1)'); // Event Horizon
+            grad.addColorStop(0.3, 'rgba(255, 251, 221, 1)'); // Inner hot disk
+            grad.addColorStop(0.5, 'rgba(255, 251, 221, 1)'); // Outer glow
+            grad.addColorStop(1, 'rgba(255, 251, 221, 0)');
 
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(x, y, 5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            }
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
         }
 
         // --- PER-PARTICLE RENDERER START ---
-        for (let i = 1; i < n; i++) {
-            const r = Math.floor(this.state.colors[i * 3 + 0] * 255);
-            const g = Math.floor(this.state.colors[i * 3 + 1] * 255);
-            const b = Math.floor(this.state.colors[i * 3 + 2] * 255);
+        // Rebuild colour groups only when the state object changes (a restart replaces
+        // it); colours are otherwise static. Grouping sets fillStyle once per colour.
+        if (this.state !== this.groupsState) {
+            this.buildGroups();
+            this.groupsState = this.state;
+        }
 
-            ctx.fillStyle = `rgb(${r},${g},${b})`;
-
-            if (this.state.mass[i] >= this.massThreshold) {
-                // Draw 2x2 rect for heavy stars centered at x,y
-                ctx.fillRect(px[i] - 1, py[i] - 1, 2, 2);
-            } else {
-                // Draw 1x1 rect for light stars at x,y
-                ctx.fillRect(px[i], py[i], 1.7, 1.7);
+        // Additive blending is commutative, so iterating groups (rather than index
+        // order) leaves the composited image unchanged. The heavy/light size branch
+        // reads mass/threshold live, so a runtime threshold change still takes effect.
+        const mass = this.state.mass;
+        for (const [color, indices] of this.groups) {
+            ctx.fillStyle = color;
+            for (let k = 0; k < indices.length; k++) {
+                const i = indices[k];
+                if (mass[i] >= this.massThreshold) {
+                    // Draw 2x2 rect for heavy stars centered at x,y
+                    ctx.fillRect(px[i] - 1, py[i] - 1, 2, 2);
+                } else {
+                    // Draw 1x1 rect for light stars at x,y
+                    ctx.fillRect(px[i], py[i], 1.7, 1.7);
+                }
             }
         }
         // --- PER-PARTICLE RENDERER END ---

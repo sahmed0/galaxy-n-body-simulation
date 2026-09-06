@@ -1,4 +1,4 @@
-import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SharedStateEngine, PhysicsParams, InitialConditionType } from './types';
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
@@ -6,22 +6,28 @@ import { PhysicsMemory } from './PhysicsMemory';
 import { PhysicsState } from './PhysicsState';
 
 /**
- * Acts as an interfacial broker connecting a running Web Worker physics loop
- * asynchronously to the main application render cycle via SharedArrayBuffer.
+ * Main-thread handle to the physics Web Worker. It shares a single
+ * {@link PhysicsMemory} SharedArrayBuffer with the worker: `step()` posts work by
+ * flipping the status flag, the worker computes into the same buffer, and the
+ * renderer reads the result with no copying.
  */
-export class WorkerBridge implements PhysicsEngine {
+export class WorkerBridge implements SharedStateEngine {
+    public readonly kind = 'shared-state' as const;
     private worker: Worker;
     private memory: PhysicsMemory;
-    private state: PhysicsState;
-    private pingInterval: ReturnType<typeof setInterval> | null = null;
-    private lastPingTime = 0;
-    private lastLatencyMs = 0;
+    public readonly state: PhysicsState;
 
     /**
-     * Mounts the Worker instance and dispatches fundamental configurations.
-     * @param memory - Structured wrapper for SharedArrayBuffer components interacting with the worker thread.
+     * Spawns the worker and hands it the shared buffer via an INIT message so both
+     * sides view the same particle arrays.
+     * @param memory - The shared physics memory both threads read and write. Must be
+     *   backed by a SharedArrayBuffer; the worker parks in `Atomics.wait`, which a
+     *   plain ArrayBuffer cannot support.
      */
     constructor(memory: PhysicsMemory) {
+        if (!memory.isShared) {
+            throw new Error('WorkerBridge requires cross-origin isolation (SharedArrayBuffer)');
+        }
         this.memory = memory;
 
         // Create local view of state for compatibility
@@ -45,51 +51,63 @@ export class WorkerBridge implements PhysicsEngine {
         this.worker.postMessage({
             type: 'INIT',
             payload: {
-                sab: this.memory.sab,
+                sab: this.memory.buffer,
                 n: this.state.n
             }
         });
-
-        this.worker.onmessage = (e: MessageEvent) => {
-            if (e.data.type === 'PONG') {
-                this.lastLatencyMs = performance.now() - this.lastPingTime;
-            }
-        };
-
-        this.pingInterval = setInterval(() => {
-            this.lastPingTime = performance.now();
-            this.worker.postMessage({ type: 'PING' });
-        }, 1000);
-
-        console.log('[WorkerBridge] Worker spawned and memory shared.');
     }
 
     /**
-     * Closes network communication bridging local state cleanly with isolated
-     * logic contexts: clears the ping interval and terminates the worker (which
-     * kills it even while it is parked in `Atomics.wait`). Idempotent - a second
-     * call clears nothing and re-terminating an already-dead worker is a no-op.
+     * Terminates the worker, which kills it even while it is parked in
+     * `Atomics.wait`. Idempotent - re-terminating an already-dead worker is a no-op.
      */
     public dispose(): void {
-        if (this.pingInterval) {
-            clearInterval(this.pingInterval);
-            this.pingInterval = null;
-        }
         this.worker.terminate();
     }
 
     /**
-     * Retains ping tracker analysis of internal data synchronisation rates.
-     * @returns Evaluation delay in milliseconds separating logical context bridges.
+     * Total number of physics steps the worker has completed since it started, read
+     * from the shared step counter. Monotonic; the manager debits simulated time only
+     * by the delta of this value so dropped (busy) requests never advance the clock.
+     * @returns The completed-step count.
      */
-    public getLastPingLatency(): number {
-        return this.lastLatencyMs;
+    public getCompletedSteps(): number {
+        return Atomics.load(this.memory.flags, PhysicsMemory.FLAG_STEPS_DONE);
     }
 
     /**
-     * Maps coordinate variables internally reflecting initial physical arrangements globally.
-     * @param _n - Non-utilized counter inherited from the Interface syntax wrapper.
-     * @param initialConditions - Coordinate structure populating baseline worker structures asynchronously.
+     * Wall-clock duration of the worker's most recent step, in milliseconds.
+     * @returns The last step duration (microseconds counter converted to ms).
+     */
+    public getLastStepMs(): number {
+        return Atomics.load(this.memory.flags, PhysicsMemory.FLAG_STEP_US) / 1000;
+    }
+
+    /**
+     * Whether the worker is mid-step. The renderer skips painting while true (the
+     * shared arrays are being mutated) and `step()` drops new requests until it clears.
+     * @returns True when the status flag is COMPUTING.
+     */
+    public isBusy(): boolean {
+        return Atomics.load(this.memory.flags, PhysicsMemory.FLAG_STATUS) === PhysicsMemory.STATUS_COMPUTING;
+    }
+
+    /**
+     * Pairwise-interaction count the worker's Barnes-Hut engine evaluated in its most
+     * recent step, read from the shared float slot. Plain read - it is a diagnostic,
+     * not a synchronisation point.
+     * @returns Interactions from the worker's last completed step.
+     */
+    public getLastInteractionCount(): number {
+        return this.memory.floatParams[PhysicsMemory.PARAM_INTERACTIONS];
+    }
+
+    /**
+     * Seeds the shared buffer with the given initial conditions. A no-op when the
+     * conditions already are the shared state (the common case), since the worker
+     * reads that buffer directly.
+     * @param _n - Total body count (unused; the shared arrays are already sized).
+     * @param initialConditions - Source arrays to copy into shared memory.
      */
     public init(_n: number, initialConditions: InitialConditionType): void {
         // Copy initial conditions into Shared Memory if needed
@@ -104,11 +122,13 @@ export class WorkerBridge implements PhysicsEngine {
     }
 
     /**
-     * Asynchronously offloads compute processing without blocking presentation threads using atomic status signaling.
-     * @param dt - Loop frequency evaluation parameter.
-     * @param params - Variables mapped dynamically and monitored locally inside workers using standard float arrays.
+     * Requests one physics step from the worker: writes the current params into the
+     * shared float slots and flips the status flag to COMPUTING. Drops the request
+     * (does nothing) if the worker is still busy with the previous step.
+     * @param dt - Time step to advance.
+     * @param params - Physical parameters written to the shared param slots.
      */
-    public update(dt: number, params: PhysicsParams): void {
+    public step(dt: number, params: PhysicsParams): void {
         const status = Atomics.load(this.memory.flags, PhysicsMemory.FLAG_STATUS);
 
         if (status === PhysicsMemory.STATUS_IDLE) {
@@ -122,34 +142,12 @@ export class WorkerBridge implements PhysicsEngine {
             this.memory.floatParams[7] = params.dmCoreRadius || 0;
             this.memory.floatParams[8] = params.blackHoleMass || 0;
             this.memory.floatParams[9] = params.blackHoleSoftening || 0;
+            this.memory.floatParams[PhysicsMemory.PARAM_ACTIVE_COUNT] = params.activeCount;
+            this.memory.floatParams[PhysicsMemory.PARAM_USE_ACTIVE_PASSIVE] = params.useActivePassive ? 1 : 0;
 
             // Set Status to COMPUTING and Notify
             Atomics.store(this.memory.flags, PhysicsMemory.FLAG_STATUS, PhysicsMemory.STATUS_COMPUTING);
             Atomics.notify(this.memory.flags, PhysicsMemory.FLAG_STATUS);
         }
-    }
-
-    /**
-     * Inspects active synchronized internal tracking components evaluating local horizontal distances.
-     * @returns A float collection reflecting element coordinates continuously updated by the separate worker thread.
-     */
-    public getPositions(): Float32Array {
-        return this.state.positionX;
-    }
-
-    /**
-     * Queries internal variables exposing mathematical drift calculated over recent worker iterations.
-     * @returns A float collection reflecting positional inertia continuously updated by the separate worker thread.
-     */
-    public getVelocities(): Float32Array {
-        return this.state.velocityX;
-    }
-
-    /**
-     * Returns the full proxy wrapper holding continuous array structures bound via SharedArrayBuffer.
-     * @returns Local PhysicsState view tracking continuous worker states lock-free.
-     */
-    public getState(): PhysicsState {
-        return this.state;
     }
 }

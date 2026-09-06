@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    ENGINE_PRESETS,
+    presetFor,
     MIN_DT_FRACTION,
     DISK_SCALE_LENGTH,
     TARGET_F_DISK,
@@ -107,7 +107,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         sim.initGalaxy();
 
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         // The BH is an inert, pinned marker: position and velocity are untouched.
         expect(sim.state.positionX[0]).toBe(0);
@@ -124,7 +124,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         // Barnes-Hut excludes the BH by *not inserting* it into the tree (rather
         // than a loop bound), so guard that path independently of BruteForce.
         const engine = new BarnesHutEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         expect(sim.state.positionX[0]).toBe(0);
         expect(sim.state.positionY[0]).toBe(0);
@@ -188,7 +188,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         const sim = makeSim('galaxy');
         sim.initGalaxy();
 
-        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+        const presetDt = presetFor(sim.params.engineType).timeStep;
 
         // Adaptive dt must not run faster than the engine preset...
         expect(sim.params.dt).toBeLessThanOrEqual(presetDt);
@@ -252,7 +252,7 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         const rms0 = rmsRadius(sim);
 
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         // A few stars on eccentric orbits is fine; a blow-up sends a large
         // fraction past several times the initial radius.
@@ -273,24 +273,24 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
 
 describe('SimulationManager - self-gravitating active/passive split', () => {
     /** Builds a galaxy sim with the active/passive split engaged. */
-    function makeSplitSim(count = 4000, nActive = 1000) {
+    function makeSplitSim(count = 1000, nActive = 500) {
         const sim = makeSim('galaxy', count);
         sim.params.selfGravActiveCount = nActive;
         return sim;
     }
 
     it('marks the BH plus the first selfGravActiveCount disk particles active', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
-        // Source range [1, activeCount) = 1000 disk sources, so activeCount = 1001
+        // Source range [1, activeCount) = 500 disk sources, so activeCount = 501
         // (the BH at index 0 occupies the leading slot, mirroring the accretion preset).
-        expect(sim.params.activeCount).toBe(1001);
+        expect(sim.params.activeCount).toBe(501);
         // Sanity: the split must actually be engaged (not clamped to count).
         expect(sim.params.activeCount).toBeLessThan(sim.params.count);
     });
 
     it('puts the full calibrated disk mass on the active set (passive tracers share the render mass)', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
 
         // Every disk particle [1, count) carries the same per-active-particle mass =
@@ -308,7 +308,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
     });
 
     it('still calibrates f_disk at 2.2 R_d from the active-set field', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
         const fDisk = sim.diskFractionAt(2.2 * DISK_SCALE_LENGTH);
         expect(Math.abs(fDisk - TARGET_F_DISK)).toBeLessThan(0.05);
@@ -322,7 +322,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
     });
 
     it('keeps the passive tracer cloud bound when stepped', () => {
-        const sim = makeSplitSim(4000, 1000);
+        const sim = makeSplitSim(1000, 500);
         sim.initGalaxy();
         const r0 = maxRadius(sim);
         const rms0 = rmsRadius(sim);
@@ -330,7 +330,7 @@ describe('SimulationManager - self-gravitating active/passive split', () => {
         // The engine reads activeCount + useActivePassive: active feel active,
         // passive feel active, neither feels passive.
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < 80; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < 80; step++) engine.step(sim.params.dt, sim.params);
 
         // The grainier active backbone makes the disk a touch hotter, so allow a
         // slightly larger flung fraction than the fully-sampled disk, but it must

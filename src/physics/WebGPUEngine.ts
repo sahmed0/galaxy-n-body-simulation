@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import type { PhysicsEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SelfRenderingEngine, PhysicsParams, InitialConditionType } from './types';
 import shaderWGSL from './shaders.wgsl?raw'; // Vite import for raw string
 
 /**
@@ -17,16 +17,69 @@ export class WebGPUUnavailableError extends Error {
     }
 }
 
+/** One labeled entry of the `Params` uniform block: a field name paired with its value. */
+export interface UniformField {
+    name: string;
+    value: number;
+}
+
+/**
+ * Single source of truth for the uniform write order. Each entry pairs a field name with its
+ * value; {@link WebGPUEngine.updateUniforms} maps this to the flat `Float32Array` it uploads.
+ * The order - and the `vecN` component names (`cameraPos.x`/`.y`, `canvasSize.x`/`.y`) - must
+ * mirror the `Params` struct in `shaders.wgsl`. `tests/gpu/uniform-layout.test.ts` parses that
+ * struct, computes WGSL byte offsets, and fails if this table ever drifts from the shader.
+ */
+export function buildUniformFields(
+    params: PhysicsParams,
+    dt: number,
+    count: number,
+    activeCount: number,
+    canvasWidth: number,
+    canvasHeight: number,
+): UniformField[] {
+    return [
+        { name: 'gravity', value: params.gravity },
+        { name: 'dt', value: dt },
+        { name: 'softening', value: params.softening },
+        { name: 'count', value: count },
+        { name: 'activeCount', value: activeCount },
+        { name: 'useActivePassive', value: params.useActivePassive ? 1.0 : 0.0 },
+        { name: 'pad4', value: 0.0 },
+        { name: 'dmStrength', value: params.dmStrength || 0.0 },
+        { name: 'cameraPos.x', value: params.cameraX || 0 },
+        { name: 'cameraPos.y', value: params.cameraY || 0 },
+        { name: 'cameraZoom', value: params.cameraZoom || 1 },
+        { name: 'cameraTilt', value: params.cameraTilt || 0.6 },
+        { name: 'canvasSize.x', value: canvasWidth },
+        { name: 'canvasSize.y', value: canvasHeight },
+        { name: 'dmCoreRadius', value: params.dmCoreRadius || 50.0 },
+        { name: 'blackHoleMass', value: params.blackHoleMass || 0.0 },
+        { name: 'blackHoleSoftening', value: params.blackHoleSoftening || params.softening },
+        { name: 'pad1', value: 0.0 },
+        { name: 'pad2', value: 0.0 },
+        { name: 'pad3', value: 0.0 },
+    ];
+}
+
 /**
  * A highly optimised physics engine relying on WebGPU Compute Shaders.
  * Calculates N-Body gravity off the main thread and pipes directly into the render queue.
  */
-export class WebGPUEngine implements PhysicsEngine {
+export class WebGPUEngine implements SelfRenderingEngine {
+    readonly kind = 'self-rendering' as const;
     private canvas: HTMLCanvasElement;
     private device: GPUDevice | null = null;
     private context: GPUCanvasContext | null = null;
-    private pipeline: GPUComputePipeline | null = null;
+    private pipeline: GPUComputePipeline | null = null;        // naive sim_update
+    private pipelineTiled: GPUComputePipeline | null = null;   // workgroup-tiled sim_update_tiled
     private renderPipeline: GPURenderPipeline | null = null;
+
+    /**
+     * Which compute kernel step() dispatches. The tiled kernel stages sources in
+     * workgroup memory and is the default; 'naive' is kept for the bench parity check.
+     */
+    public kernelMode: 'tiled' | 'naive' = 'tiled';
 
     // Buffers
     private bufferParams: GPUBuffer | null = null;
@@ -42,12 +95,24 @@ export class WebGPUEngine implements PhysicsEngine {
     private simStep = 0;
     private count = 0;
     private activeCount = 0; // Number of heavy particles
+    private lastUseActivePassive = false; // Mirrors the last uploaded uniform, for interaction counting
 
     private bindGroupLayoutCompute: GPUBindGroupLayout | null = null;
     private bindGroupLayoutRender: GPUBindGroupLayout | null = null;
     private bindGroupParams: GPUBindGroup | null = null;
 
     private lastDispatchTimeMs = 0;
+
+    // --- GPU-pass timing via timestamp-query (falls back to wall-clock) ---
+    private hasTimestamp = false;
+    private querySet: GPUQuerySet | null = null;
+    private queryResolveBuffer: GPUBuffer | null = null;
+    private queryStagingBuffer: GPUBuffer | null = null;
+    private lastGpuPassMs = 0;
+    private lastGpuPassSource: 'timestamp' | 'approx' = 'approx';
+    private lastTimestampReadMs = 0;
+    private mapPending = false;
+    private static readonly TIMESTAMP_INTERVAL_MS = 250;
 
     /**
      * Invoked when the GPU device is lost *after* a successful init (driver reset,
@@ -57,14 +122,18 @@ export class WebGPUEngine implements PhysicsEngine {
     onDeviceLost: ((info: GPUDeviceLostInfo) => void) | null = null;
 
     constructor() {
-        // Create Canvas
+        // Create Canvas. Backing store is sized in physical pixels (CSS size x dpr) for HiDPI
+        // crispness; the shader compensates by scaling cameraZoom by dpr (see updateUniforms).
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.canvas = document.createElement('canvas');
         this.canvas.id = 'webgpu-canvas';
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
+        this.canvas.width = Math.round(window.innerWidth * dpr);
+        this.canvas.height = Math.round(window.innerHeight * dpr);
         this.canvas.style.position = 'fixed'; // Must be fixed, not absolute, to match CSS
         this.canvas.style.top = '0';
         this.canvas.style.left = '0';
+        this.canvas.style.width = window.innerWidth + 'px';
+        this.canvas.style.height = window.innerHeight + 'px';
         this.canvas.style.display = 'none'; // Hidden by default
         document.body.appendChild(this.canvas);
     }
@@ -80,7 +149,13 @@ export class WebGPUEngine implements PhysicsEngine {
         this.device = null;
         this.context = null;
         this.pipeline = null;
+        this.pipelineTiled = null;
         this.renderPipeline = null;
+        this.querySet = null;
+        this.queryResolveBuffer = null;
+        this.queryStagingBuffer = null;
+        this.hasTimestamp = false;
+        this.mapPending = false;
         this.bufferParams = null;
         this.bufferParticlesA = null;
         this.bufferParticlesB = null;
@@ -122,8 +197,14 @@ export class WebGPUEngine implements PhysicsEngine {
             throw new WebGPUUnavailableError('No WebGPU adapter available.');
         }
 
+        // 'timestamp-query' gives real GPU-pass durations. Optional: request it only when
+        // the adapter advertises it, and fall back to wall-clock timing when it is absent.
+        this.hasTimestamp = adapter.features.has('timestamp-query');
         try {
-            this.device = await adapter.requestDevice({ label: 'WebGPUEngine Device' });
+            this.device = await adapter.requestDevice({
+                label: 'WebGPUEngine Device',
+                requiredFeatures: this.hasTimestamp ? ['timestamp-query'] : [],
+            });
         } catch (err) {
             throw new WebGPUUnavailableError('adapter.requestDevice() failed.', { cause: err });
         }
@@ -208,6 +289,30 @@ export class WebGPUEngine implements PhysicsEngine {
             compute: { module: shaderModule, entryPoint: 'sim_update' },
         });
 
+        // Tiled kernel shares the compute pipeline layout (workgroup memory needs no
+        // layout change); step() picks between the two via kernelMode.
+        this.pipelineTiled = await this.device.createComputePipelineAsync({
+            label: 'Compute Pipeline (Sim Update Tiled)',
+            layout: pipelineLayoutCompute,
+            compute: { module: shaderModule, entryPoint: 'sim_update_tiled' },
+        });
+
+        // Timestamp-query resources: a 2-entry query set (pass begin/end) resolved into
+        // a buffer, then copied to a mappable staging buffer for async read-back.
+        if (this.hasTimestamp) {
+            this.querySet = this.device.createQuerySet({ type: 'timestamp', count: 2 });
+            this.queryResolveBuffer = this.device.createBuffer({
+                label: 'Timestamp Resolve Buffer',
+                size: 16, // 2 x u64
+                usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+            });
+            this.queryStagingBuffer = this.device.createBuffer({
+                label: 'Timestamp Staging Buffer',
+                size: 16,
+                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+            });
+        }
+
         this.renderPipeline = await this.device.createRenderPipelineAsync({
             label: 'Render Pipeline',
             layout: pipelineLayoutRender,
@@ -222,24 +327,21 @@ export class WebGPUEngine implements PhysicsEngine {
             entries: [{ binding: 0, resource: { buffer: this.bufferParams } }],
         });
 
-        console.log("WebGPU Initialized");
-
         this.setParticles(n, initialState, activeCount);
     }
 
     /**
-     * Initialises and writes physical elements directly into GPU internal buffer state.
-     * Overwrites memory directly by passing arrays sequentially instead of struct-of-arrays representation.
-     * @param n - Defined number of simulated particles to initialise.
-     * @param initialState - Original configuration source struct to extract details from.
-     * @param activeCount - High mass element tracking boundary.
+     * Uploads `n` bodies from a CPU {@link PhysicsState} into the GPU particle
+     * buffers, packing position+velocity and the per-body properties into the two
+     * vec4 layouts the compute shader expects.
+     * @param n - Number of bodies to upload.
+     * @param initialState - Source SoA arrays to read from.
+     * @param activeCount - Number of leading heavy (field-generating) bodies.
      */
     setParticles(n: number, initialState: InitialConditionType, activeCount: number) {
         if (!this.device) return;
         this.count = n;
         this.activeCount = activeCount;
-
-        console.log(`[WebGPUEngine] Set particles: ${n}, Active Heavy: ${this.activeCount}`);
 
         const dataPosVel = new Float32Array(n * 4);
         const dataProps = new Float32Array(n * 4);
@@ -329,20 +431,24 @@ export class WebGPUEngine implements PhysicsEngine {
     }
 
     /**
-     * Flushes local configuration variables (e.g., zoom, dt, mass rules) to WebGPU Unifoms, 
-     * making sure the compute shaders can evaluate state with the newest boundaries.
-     * @param dt - Delta time multiplier.
-     * @param params - Reference standard config object carrying runtime simulation tuning.
+     * Writes the current frame's parameters (dt, gravity, softening, camera, mass
+     * rules, …) into the GPU uniform buffer so the next compute and render pass see
+     * up-to-date values. Also resizes the canvas to the window if it changed.
+     * @param dt - Time step for this frame.
+     * @param params - Runtime simulation parameters to upload.
      */
     updateUniforms(dt: number, params: PhysicsParams) {
         if (!this.device || !this.context) return;
 
-        const useActivePassiveVal = params.useActivePassive ? 1.0 : 0.0;
-
-        // Resize WebGPU Canvas if needed
-        if (this.canvas.width !== window.innerWidth || this.canvas.height !== window.innerHeight) {
-            this.canvas.width = window.innerWidth;
-            this.canvas.height = window.innerHeight;
+        // Resize WebGPU Canvas if needed. Backing store is CSS size x dpr (physical pixels).
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const physW = Math.round(window.innerWidth * dpr);
+        const physH = Math.round(window.innerHeight * dpr);
+        if (this.canvas.width !== physW || this.canvas.height !== physH) {
+            this.canvas.width = physW;
+            this.canvas.height = physH;
+            this.canvas.style.width = window.innerWidth + 'px';
+            this.canvas.style.height = window.innerHeight + 'px';
             // Need to reconfigure context if canvas size changes
             this.context?.configure({
                 device: this.device,
@@ -351,28 +457,15 @@ export class WebGPUEngine implements PhysicsEngine {
             });
         }
 
-        const uniformData = new Float32Array([
-            params.gravity,
-            dt,
-            params.softening,
-            this.count,
-            this.activeCount,
-            useActivePassiveVal,
-            params.theta || 1.0,
-            params.dmStrength || 0.0,
-            params.cameraX || 0,
-            params.cameraY || 0,
-            params.cameraZoom || 1,
-            params.cameraTilt || 0.6,
-            this.canvas.width,
-            this.canvas.height,
-            params.dmCoreRadius || 50.0,
-            params.blackHoleMass || 0.0,
-            params.blackHoleSoftening || params.softening,
-            0.0, // pad1
-            0.0, // pad2
-            0.0  // pad3
-        ]);
+        // canvasSize carries physical pixels, so scale cameraZoom by dpr to map world units to
+        // physical pixels uniformly (the shader multiplies both position and point size by zoom).
+        // cameraPos is left unscaled: it is subtracted before the zoom multiply in the shader.
+        this.lastUseActivePassive = params.useActivePassive;
+        const fields = buildUniformFields(params, dt, this.count, this.activeCount,
+            this.canvas.width, this.canvas.height);
+        const zoomField = fields.find(f => f.name === 'cameraZoom');
+        if (zoomField) zoomField.value *= dpr;
+        const uniformData = new Float32Array(fields.map(f => f.value));
         this.device.queue.writeBuffer(this.bufferParams!, 0, uniformData);
     }
 
@@ -386,15 +479,29 @@ export class WebGPUEngine implements PhysicsEngine {
      * @param params - Configuration parameter blocks evaluating runtime features.
      */
     step(dt: number, params: PhysicsParams) {
-        if (!this.device || !this.pipeline) return;
+        if (!this.device || !this.pipeline || !this.pipelineTiled) return;
         if (!this.bindGroupComputeA || !this.bindGroupComputeB) return;
 
         this.updateUniforms(dt, params);
 
+        const pipeline = this.kernelMode === 'tiled' ? this.pipelineTiled : this.pipeline;
+
+        // Throttle timestamp read-back: at most one sample every TIMESTAMP_INTERVAL_MS,
+        // and never while a previous map is still pending. On other frames we run a plain
+        // dispatch with no query overhead.
+        const nowMs = performance.now();
+        const sampleTimestamp = this.hasTimestamp && !this.mapPending
+            && this.querySet !== null
+            && (nowMs - this.lastTimestampReadMs) >= WebGPUEngine.TIMESTAMP_INTERVAL_MS;
+
         const commandEncoder = this.device.createCommandEncoder({ label: 'Compute Command Encoder' });
 
-        const computePass = commandEncoder.beginComputePass({ label: 'Compute Pass' });
-        computePass.setPipeline(this.pipeline);
+        const computePass = commandEncoder.beginComputePass(
+            sampleTimestamp
+                ? { label: 'Compute Pass', timestampWrites: { querySet: this.querySet!, beginningOfPassWriteIndex: 0, endOfPassWriteIndex: 1 } }
+                : { label: 'Compute Pass' }
+        );
+        computePass.setPipeline(pipeline);
         computePass.setBindGroup(0, this.bindGroupParams!);
 
         // Step 0 (even): read A, write B.
@@ -405,11 +512,34 @@ export class WebGPUEngine implements PhysicsEngine {
         computePass.dispatchWorkgroups(workgroupCount);
         computePass.end();
 
+        if (sampleTimestamp && this.queryResolveBuffer && this.queryStagingBuffer) {
+            commandEncoder.resolveQuerySet(this.querySet!, 0, 2, this.queryResolveBuffer, 0);
+            commandEncoder.copyBufferToBuffer(this.queryResolveBuffer, 0, this.queryStagingBuffer, 0, 16);
+        }
+
         const start = performance.now();
         this.device.queue.submit([commandEncoder.finish()]);
         this.device.queue.onSubmittedWorkDone().then(() => {
             this.lastDispatchTimeMs = performance.now() - start;
         });
+
+        if (sampleTimestamp && this.queryStagingBuffer) {
+            this.lastTimestampReadMs = nowMs;
+            this.mapPending = true;
+            const staging = this.queryStagingBuffer;
+            staging.mapAsync(GPUMapMode.READ).then(() => {
+                const times = new BigUint64Array(staging.getMappedRange().slice(0));
+                staging.unmap();
+                // Timestamps are in nanoseconds; diff and convert to ms.
+                const deltaNs = times[1] - times[0];
+                this.lastGpuPassMs = Number(deltaNs) / 1e6;
+                this.lastGpuPassSource = 'timestamp';
+                this.mapPending = false;
+            }).catch(() => {
+                // Device lost or map failed: drop back to the wall-clock fallback.
+                this.mapPending = false;
+            });
+        }
 
         // Swap for next step. After incrementing, the latest state is in the
         // buffer the next compute step would READ from.
@@ -457,27 +587,70 @@ export class WebGPUEngine implements PhysicsEngine {
     }
 
     /**
-     * Convenience wrapper: advance one step and render. Retained for callers that
-     * do not perform their own fixed-timestep sub-stepping.
-     * @param dt - Delta time multiplier.
-     * @param params - Configuration parameter blocks evaluating runtime features.
-     */
-    update(dt: number, params: PhysicsParams) {
-        this.step(dt, params);
-        this.render(params);
-    }
-
-    /**
-     * Extracts telemetry tracking GPU hardware processing times per compute pass.
-     * @returns Duration in milliseconds simulating the last iteration sequence.
+     * Wall-clock time the last compute dispatch took to complete, in milliseconds.
+     * @returns Duration of the most recent compute pass.
      */
     getLastDispatchTime(): number {
         return this.lastDispatchTimeMs;
     }
 
     /**
-     * Computes the approximate RAM utilized across VRAM buffer pools.
-     * @returns Byte count scaled upward to Megabytes.
+     * Duration of the last measured compute pass. Prefers a real GPU-timeline
+     * measurement from timestamp-query when one is fresh; otherwise reports the
+     * `onSubmittedWorkDone` wall-clock approximation.
+     * @returns The pass duration in ms and which clock produced it.
+     */
+    getLastGpuPassMs(): { ms: number; source: 'timestamp' | 'approx' } {
+        if (this.hasTimestamp && this.lastGpuPassSource === 'timestamp') {
+            return { ms: this.lastGpuPassMs, source: 'timestamp' };
+        }
+        return { ms: this.lastDispatchTimeMs, source: 'approx' };
+    }
+
+    /**
+     * Exact number of pairwise force interactions the last step evaluated:
+     * `count × limit`, where limit is the active-source count (all bodies when
+     * active/passive is off). The GPU force loop is dense, so this closed form is exact.
+     * @returns Pairwise interactions evaluated in the most recent step.
+     */
+    getLastInteractionCount(): number {
+        const limit = this.lastUseActivePassive ? this.activeCount : this.count;
+        return this.count * limit;
+    }
+
+    /**
+     * Reads the current particle positions/velocities back to the CPU. Bench-only
+     * diagnostic (the kernel parity check) - the render path never reads GPU state
+     * back. Copies the buffer holding the latest step's output into a mappable
+     * staging buffer and returns it as a flat `[x, y, vx, vy, …]` Float32Array.
+     * @returns The particle pos/vel array, or null if the device is unavailable.
+     */
+    async readParticles(): Promise<Float32Array | null> {
+        if (!this.device) return null;
+        // After step() increments simStep, the latest state lives in the buffer the
+        // next step would read: even -> A, odd -> B.
+        const latest = (this.simStep % 2 === 0) ? this.bufferParticlesA : this.bufferParticlesB;
+        if (!latest) return null;
+
+        const size = latest.size;
+        const staging = this.device.createBuffer({
+            label: 'Particle Readback Staging',
+            size,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
+        const encoder = this.device.createCommandEncoder({ label: 'Readback Encoder' });
+        encoder.copyBufferToBuffer(latest, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        await staging.mapAsync(GPUMapMode.READ);
+        const out = new Float32Array(staging.getMappedRange().slice(0));
+        staging.unmap();
+        staging.destroy();
+        return out;
+    }
+
+    /**
+     * Approximate GPU memory held by the particle and property buffers.
+     * @returns Buffer footprint in megabytes.
      */
     getMemoryUsageMB(): number {
         if (!this.bufferParticlesA || !this.bufferProps) return 0;
@@ -486,24 +659,8 @@ export class WebGPUEngine implements PhysicsEngine {
     }
 
     /**
-     * An anti-pattern interface override returning zero (GPU coordinates remain on-device).
-     * @returns Fake empty array for interface compatibility. 
-     */
-    getPositions(): Float32Array {
-        return new Float32Array(0);
-    }
-
-    /**
-     * An anti-pattern interface override returning zero (GPU coordinates remain on-device).
-     * @returns Fake empty array for interface compatibility.
-     */
-    getVelocities(): Float32Array {
-        return new Float32Array(0);
-    }
-
-    /**
-     * Modifies the internal layout visibility attribute.
-     * @param visible - Target presentation tracking status.
+     * Shows or hides this engine's own canvas.
+     * @param visible - Whether the GPU canvas should be displayed.
      */
     setVisible(visible: boolean) {
         this.canvas.style.display = visible ? 'block' : 'none';
@@ -521,6 +678,9 @@ export class WebGPUEngine implements PhysicsEngine {
         this.bufferParticlesB?.destroy();
         this.bufferProps?.destroy();
         this.bufferParams?.destroy();
+        this.querySet?.destroy();
+        this.queryResolveBuffer?.destroy();
+        this.queryStagingBuffer?.destroy();
         this.device?.destroy();
         this.canvas.remove();
         // Forget every per-device reference so the instance is inert afterwards.

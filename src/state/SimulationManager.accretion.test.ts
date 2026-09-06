@@ -11,13 +11,11 @@
  * SimulationManager.params.blackHoleMass} stays 0) and no measured rotation curve.
  * initGalaxy()/BruteForceEngine touch no DOM or GPU, so they are driven directly.
  *
- * This file is the home for all accretion-preset tests; further phases add the
- * adaptive-timestep and high-central-mass (Keplerian/stability/glow) checks here.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    ENGINE_PRESETS,
+    presetFor,
     MIN_DT_FRACTION,
     ACCRETION_BH_MASS,
     GALAXY_CENTRAL_BH_MASS,
@@ -95,7 +93,7 @@ describe('SimulationManager - accretion preset baseline', () => {
 
         // With the high central mass the adaptive timestep shrinks dt below the
         // fixed preset value to resolve the fast inner orbits.
-        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+        const presetDt = presetFor(sim.params.engineType).timeStep;
         expect(sim.params.dt).toBeLessThanOrEqual(presetDt);
         // The fastest orbit (peak angular frequency over the annulus) must be
         // resolved by at least ~30 leapfrog steps.
@@ -116,7 +114,7 @@ describe('SimulationManager - accretion adaptive timestep', () => {
     it('derives a finite dt within [floor, presetDt] for the accretion preset', () => {
         const sim = makeSim('accretion');
         sim.initGalaxy();
-        const presetDt = ENGINE_PRESETS[sim.params.engineType as keyof typeof ENGINE_PRESETS].timeStep;
+        const presetDt = presetFor(sim.params.engineType).timeStep;
         expect(Number.isFinite(sim.params.dt)).toBe(true);
         expect(sim.params.dt).toBeGreaterThan(0);
         expect(sim.params.dt).toBeLessThanOrEqual(presetDt);
@@ -177,7 +175,7 @@ describe('SimulationManager - accretion central SMBH', () => {
         const rms0 = rmsRadius(sim);
 
         const engine = new BruteForceEngine(sim.state);
-        for (let step = 0; step < steps; step++) engine.update(sim.params.dt, sim.params);
+        for (let step = 0; step < steps; step++) engine.step(sim.params.dt, sim.params);
 
         // Keplerian orbits are clean closed ellipses: very few stars get flung out,
         // and the disk neither expands nor collapses appreciably (tighter than the

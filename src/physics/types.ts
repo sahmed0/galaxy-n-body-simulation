@@ -6,6 +6,35 @@ import { PhysicsState } from './PhysicsState';
 export type InitialConditionType = PhysicsState;
 
 /**
+ * The set of selectable physics backends. `worker` runs Barnes-Hut off the main
+ * thread via {@link SharedStateEngine}; the rest run inline.
+ */
+export type EngineType = 'brute' | 'barnes' | 'webgpu' | 'worker';
+
+/**
+ * Maximum particle count each engine can sustain. Brute force is O(N^2) on the main
+ * thread so it caps lowest; the tree engines scale to ~50k; WebGPU handles the largest N.
+ * The UI clamps the stars input and, on engine switch, the current count to these bounds.
+ */
+export const ENGINE_MAX_COUNT: Record<EngineType, number> = {
+    brute: 20_000,
+    barnes: 50_000,
+    worker: 50_000,
+    webgpu: 200_000,
+};
+
+/**
+ * Narrows an untrusted string - a `<select>` value, a URL hash field - to an
+ * {@link EngineType}. Derived from {@link ENGINE_MAX_COUNT} so the accepted set cannot
+ * drift away from the set of engines that have a capacity defined.
+ * @param v - The raw string to test.
+ * @returns Whether `v` names a real engine.
+ */
+export function isEngineType(v: string): v is EngineType {
+    return Object.prototype.hasOwnProperty.call(ENGINE_MAX_COUNT, v);
+}
+
+/**
  * Configuration parameters for the physics simulation step.
  */
 export interface PhysicsParams {
@@ -42,7 +71,11 @@ export interface PhysicsParams {
 }
 
 /**
- * A standard interface representing a physics evaluation engine.
+ * The capability shared by every physics evaluation engine: it can be
+ * initialised, stepped one time increment, and disposed. It deliberately says
+ * nothing about *how* results are observed - that is the job of the two
+ * capability sub-interfaces ({@link SharedStateEngine} and
+ * {@link SelfRenderingEngine}), discriminated by their `kind` tag.
  */
 export interface PhysicsEngine {
     /**
@@ -65,35 +98,61 @@ export interface PhysicsEngine {
     init(n: number, initialConditions: InitialConditionType): void | Promise<void>;
 
     /**
-     * Updates the simulation state by a given time step.
+     * Advances the simulation state by a given time step.
      * @param dt - The time step delta to advance the simulation.
      * @param params - The physical parameters governing the simulation forces.
      */
-    update(dt: number, params: PhysicsParams): void;
-
-    /**
-     * Retrieves the current positions of the bodies in the simulation.
-     * @returns A Float32Array containing interleaved position data, or X-axis positions (implementation specific).
-     */
-    getPositions(): Float32Array;
-
-    /**
-     * Retrieves the current velocities of the bodies in the simulation.
-     * @returns A Float32Array containing interleaved velocity data, or X-axis velocities (implementation specific).
-     */
-    getVelocities(): Float32Array;
-
-    /**
-     * Explicitly sets all particle data in the engine (optional method).
-     * @param n - The total number of bodies in the simulation.
-     * @param initialConditions - The structure containing the full data state.
-     * @param activeCount - An optional limit denoting the number of bodies that actively apply forces.
-     */
-    setParticles?(n: number, initialConditions: InitialConditionType, activeCount?: number): void;
+    step(dt: number, params: PhysicsParams): void;
 
     /**
      * Releases all engine resources (workers, GPU buffers/device, DOM nodes,
      * timers). Safe to call more than once; the engine is unusable afterwards.
      */
-    dispose?(): void;
+    dispose(): void;
+
+    /**
+     * Exact number of pairwise force interactions the most recent step evaluated,
+     * for honest performance telemetry. Optional so engines that do not track it are
+     * not forced to implement it; callers must treat a missing method as "unknown".
+     * @returns Pairwise interactions evaluated in the last step.
+     */
+    getLastInteractionCount?(): number;
 }
+
+/**
+ * A physics engine that steps a shared {@link PhysicsState} which a separate
+ * renderer reads. The CPU engines ({@link BruteForceEngine},
+ * {@link BarnesHutEngine}, {@link WorkerBridge}) are of this kind.
+ */
+export interface SharedStateEngine extends PhysicsEngine {
+    readonly kind: 'shared-state';
+    /**
+     * The simulation state this engine steps. It is the same object the owning
+     * caller holds and the renderer reads - the engine mutates it in place.
+     */
+    readonly state: PhysicsState;
+}
+
+/**
+ * A physics engine that both steps *and* presents its own output, owning its
+ * render surface ({@link WebGPUEngine}). Its data stays on-device, so there is
+ * no shared {@link PhysicsState}; callers drive presentation via `render`.
+ */
+export interface SelfRenderingEngine extends PhysicsEngine {
+    readonly kind: 'self-rendering';
+    /**
+     * Presents the engine's current state to its own surface.
+     * @param params - The parameters governing presentation (e.g. camera).
+     */
+    render(params: PhysicsParams): void;
+    /**
+     * Shows or hides the engine's render surface.
+     * @param visible - Target visibility of the surface.
+     */
+    setVisible(visible: boolean): void;
+}
+
+/**
+ * The polymorphic engine reference: either capability, discriminated by `kind`.
+ */
+export type AnyEngine = SharedStateEngine | SelfRenderingEngine;

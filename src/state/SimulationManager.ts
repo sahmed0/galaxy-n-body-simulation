@@ -10,18 +10,39 @@ import {
     BarnesHutEngine,
     WorkerBridge,
 } from '../physics';
-import type { PhysicsEngine } from '../physics';
+import type { AnyEngine, EngineType } from '../physics';
+import { EnergyMonitor } from '../physics/energy';
 import { CanvasRenderer } from '../rendering';
-import { massToColor } from '../utils';
+import { massToColor, mulberry32, randomUint32 } from '../utils';
+
+/** Per-engine default physics parameters applied on an engine switch. */
+export interface EnginePreset {
+    theta: number;
+    softening: number;
+    timeStep: number;
+}
 
 /**
- * Preset configuration values for different physics engines.
+ * Preset configuration values for different physics engines. The worker engine runs
+ * the same Barnes-Hut algorithm off-thread, so it shares the Barnes-Hut values.
  */
-export const ENGINE_PRESETS = {
+export const ENGINE_PRESETS: Record<EngineType, EnginePreset> = {
     brute: { theta: 0.0, softening: 1.0, timeStep: 0.016 },
     barnes: { theta: 1.0, softening: 1.0, timeStep: 0.016 },
-    webgpu: { theta: 0.0, softening: 1.0, timeStep: 0.016 }
+    webgpu: { theta: 0.0, softening: 1.0, timeStep: 0.016 },
+    worker: { theta: 1.0, softening: 1.0, timeStep: 0.016 }
 };
+
+/**
+ * Resolves the preset for a given engine type.
+ */
+export function presetFor(type: EngineType): EnginePreset {
+    return ENGINE_PRESETS[type];
+}
+
+// Engine capacity is a property of the engines, so it lives beside EngineType. Re-exported
+// here because this module is where callers have always imported it from.
+export { ENGINE_MAX_COUNT } from '../physics';
 
 /**
  * Base radius for galaxy particle distribution generation. Used by the accretion
@@ -199,9 +220,8 @@ export const SELF_GRAV_BH_SOFTENING = 25;
 export class SimulationManager {
     memory!: PhysicsMemory;
     state!: PhysicsState;
-    engine!: PhysicsEngine;
+    engine!: AnyEngine;
     webGpuEngine: WebGPUEngine | null = null;
-    activeEngineStr: 'cpu' | 'gpu' = 'cpu';
     workerBridge: WorkerBridge | null = null;
     renderer!: CanvasRenderer;
 
@@ -227,6 +247,13 @@ export class SimulationManager {
      */
     onEngineFallback: (reason: string) => void = () => { };
 
+    /**
+     * Called once per render loop iteration, after the camera updates. Lets the entry
+     * layer drive DOM-facing effects (e.g. the parallax background) without the state
+     * layer touching the DOM itself.
+     */
+    onFrame: ((sim: SimulationManager) => void) | null = null;
+
     animationFrameId: number = 0;
     frames = 0;
     lastTelemetryUpdate = 0;
@@ -250,6 +277,20 @@ export class SimulationManager {
     private rotCurveRMax = 0;
 
     /**
+     * Source of randomness for all initial-condition sampling (Salpeter masses,
+     * disk positions/velocities). Re-derived from {@link currentSeed} by every
+     * {@link initGalaxy}, so one seed means one realization.
+     */
+    private rng: () => number = mulberry32(0);
+
+    /**
+     * Seed of the realization currently loaded. Defaults to 0 rather than a random draw
+     * so a bare manager - i.e. every unit test - is reproducible without ceremony; the
+     * entry layer draws the real default for the app.
+     */
+    public currentSeed = 0;
+
+    /**
      * Azimuthally-averaged surface-density profile (Sigma vs radius) of the
      * self-gravitating disk, measured from the *realized* particle distribution
      * (see {@link SimulationManager.buildSurfaceDensity}). Bin k is centred at
@@ -265,6 +306,37 @@ export class SimulationManager {
     private accumulator = 0;
     private static readonly MAX_SUBSTEPS = 5;
 
+    // Completed-step count last observed from the worker. Simulated time is debited
+    // only by the growth of this value, so steps the worker drops while busy never
+    // advance the clock. Reset to 0 whenever a fresh WorkerBridge is created.
+    private workerStepsSeen = 0;
+
+    // Physics steps completed within the current telemetry window; flushed to
+    // stepsPerSecond every ~250 ms. Distinct from `frames` (which counts renders).
+    private stepsThisWindow = 0;
+    /** Physics steps per second over the last telemetry window (read by the UI). */
+    stepsPerSecond = 0;
+
+    /**
+     * Exact active-subsystem energy/momentum diagnostics, serviced by {@link serviceEnergy}
+     * on a decimated schedule. Read by the UI's energy panel.
+     */
+    readonly energyMonitor = new EnergyMonitor();
+    /**
+     * Whether to spend cycles measuring energy. Owned by the energy panel's visibility:
+     * a closed panel costs nothing.
+     */
+    energyEnabled = false;
+    /**
+     * Accumulated simulated seconds: `dt` × every step actually executed, worker steps
+     * included. Stamped onto each energy sample. Reset with the initial conditions.
+     */
+    simTimeSeconds = 0;
+    /** Wall-clock ms at which the last energy cycle *completed*; gates the next one. */
+    private lastEnergyCycleEndMs = 0;
+    /** Minimum wall-clock gap between the end of one energy cycle and the start of the next. */
+    private static readonly ENERGY_CYCLE_INTERVAL_MS = 1000;
+
     /**
      * Callback triggered periodically to report simulation performance metrics.
      * @param fps - The calculated frames per second over the last telemetry interval.
@@ -277,7 +349,7 @@ export class SimulationManager {
      * Adjusted dynamically by runtime interactions in the UI.
      */
     params = {
-        engineType: 'webgpu',
+        engineType: 'webgpu' as EngineType,
         // Simulation preset (initial conditions):
         //   'accretion' - SMBH/halo-dominated; disk is light (test-particle) -> rings
         //   'galaxy'    - massive self-gravitating disk tuned to Toomre Q -> spiral arms
@@ -325,7 +397,6 @@ export class SimulationManager {
                 this.webGpuEngine = new WebGPUEngine();
                 await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
                 this.registerWebGpuLossHandler();
-                this.activeEngineStr = 'gpu';
                 this.engine = this.webGpuEngine;
                 this.webGpuEngine.setVisible(true);
                 this.renderer.canvas.style.display = 'none';
@@ -420,7 +491,7 @@ export class SimulationManager {
             await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
             this.registerWebGpuLossHandler();
             this.webGpuEngine.updateUniforms(this.params.dt, this.params);
-            console.log('WebGPU device re-created; continuing on GPU.');
+            console.info('WebGPU device re-created; continuing on GPU.');
         } catch (err) {
             console.error('WebGPU re-creation failed:', err);
             this.handleWebGpuFailure(`WebGPU device lost (${reasonStr}) and could not be re-created - running CPU Barnes-Hut`);
@@ -428,9 +499,30 @@ export class SimulationManager {
     }
 
     /**
+     * Pins the realization for the next (re)initialisation, re-deriving the generator now
+     * so a caller that samples before {@link initGalaxy} sees the stream it will get.
+     *
+     * The guarantee covers *initial conditions* only. Later actions draw from the same
+     * stream and advance it - notably {@link switchEngine}, whose
+     * {@link softResetVelocities} resamples Toomre kicks and velocity scatter - so a seed
+     * reproduces t=0, not a mid-run state.
+     *
+     * @param seed - Stream selector, coerced to uint32.
+     */
+    setSeed(seed: number): void {
+        this.currentSeed = seed >>> 0;
+        this.rng = mulberry32(this.currentSeed);
+    }
+
+    /**
      * Initialises/re-initialises galaxy particle data including positions, velocities, and colours.
      */
     initGalaxy() {
+        // Re-derive before any sampling: a restart must reproduce its seed's realization
+        // exactly even though softResetVelocities and engine switches have since advanced
+        // the stream past the initial-condition draws.
+        this.rng = mulberry32(this.currentSeed);
+
         this.memory = new PhysicsMemory(this.params.count);
         this.state = new PhysicsState(this.params.count, this.memory);
         // Tear down any live worker before dropping the reference: the old bridge
@@ -461,6 +553,19 @@ export class SimulationManager {
         } else {
             this.initAccretionDisk();
         }
+
+        // Fresh initial conditions: the simulated clock restarts and the old E0 describes
+        // a system that no longer exists. Covers init(), restart(), and preset changes.
+        this.simTimeSeconds = 0;
+        this.resetEnergyBaseline();
+    }
+
+    /**
+     * Drops the ΔE/E₀ baseline and history. Call whenever an edit makes the old E₀
+     * meaningless. Idempotent.
+     */
+    resetEnergyBaseline(): void {
+        this.energyMonitor.resetBaseline();
     }
 
     /**
@@ -484,8 +589,8 @@ export class SimulationManager {
         const particles: { x: number; y: number; mass: number; r: number; g: number; b: number; dist: number }[] = [];
 
         for (let i = 1; i < this.params.count; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = DISK_INNER_RADIUS + Math.random() * GALAXY_RADIUS;
+            const angle = this.rng() * Math.PI * 2;
+            const dist = DISK_INNER_RADIUS + this.rng() * GALAXY_RADIUS;
             const x = Math.cos(angle) * dist;
             const y = Math.sin(angle) * dist;
 
@@ -587,7 +692,7 @@ export class SimulationManager {
 
         const radii = new Float64Array(n);
         for (let i = start; i < n; i++) {
-            const angle = Math.random() * Math.PI * 2;
+            const angle = this.rng() * Math.PI * 2;
             // Sample R from the exponential-disk *radial* distribution
             // dN/dR = 2*pi*R*Sigma(R) ∝ R*exp(-R/Rd): a Gamma(k=2, scale=Rd)
             // deviate (the sum of two exponentials), truncated at Rmax by rejection.
@@ -596,7 +701,7 @@ export class SimulationManager {
             // intended exponential disk.
             let R: number;
             do {
-                R = -Rd * (Math.log(1 - Math.random()) + Math.log(1 - Math.random()));
+                R = -Rd * (Math.log(1 - this.rng()) + Math.log(1 - this.rng()));
             } while (R > Rmax);
             radii[i] = R;
 
@@ -705,7 +810,7 @@ export class SimulationManager {
         const mMin = 0.1;
         const mMax = 50.0;
         const p = 1.35;
-        const u = Math.random();
+        const u = this.rng();
         const minP = Math.pow(mMin, -p);
         const maxP = Math.pow(mMax, -p);
         return Math.pow(u * (maxP - minP) + minP, -1 / p);
@@ -831,10 +936,15 @@ export class SimulationManager {
             this.computeStarVelocity(i, dist);
         }
 
-        if (this.activeEngineStr === 'gpu' && this.webGpuEngine) {
+        if (this.webGpuEngine && this.engine === this.webGpuEngine) {
             this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
             this.webGpuEngine.updateUniforms(this.params.dt, this.params);
         }
+
+        // Every velocity in the subsystem just changed, so the old E0 is meaningless.
+        // This is the chokepoint for it: switchEngine() calls us before all of its
+        // fallback early-returns, and the gravity slider's `change` handler calls us too.
+        this.resetEnergyBaseline();
     }
 
     /**
@@ -898,8 +1008,7 @@ export class SimulationManager {
     }
 
     private effectiveSoftening(): number {
-        const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
-        const base = preset ? preset.softening : ENGINE_PRESETS.brute.softening;
+        const base = presetFor(this.params.engineType).softening;
         if (this.params.preset !== 'galaxy') return base;
         // Collisionality is set by the heavy *active* macro-particles (each carries
         // Mdisk / N_active and sources the field), so the relevant mass and spacing
@@ -941,8 +1050,7 @@ export class SimulationManager {
      * falls back to the preset dt otherwise. Mirrors {@link effectiveSoftening}.
      */
     computeAdaptiveTimestep(): number {
-        const preset = ENGINE_PRESETS[this.params.engineType as keyof typeof ENGINE_PRESETS];
-        const presetDt = preset ? preset.timeStep : ENGINE_PRESETS.brute.timeStep;
+        const presetDt = presetFor(this.params.engineType).timeStep;
         if (this.params.preset === 'accretion') {
             // Resolve the fastest orbit about the central SMBH + halo. Sample
             // Omega(r) = vCirc(r)/r analytically over the annulus
@@ -1343,7 +1451,7 @@ export class SimulationManager {
             // --- Accretion (central-mass-dominated): near-circular with mild scatter ---
             const aTot = this.radialAcc(r);
             const vCirc = Math.sqrt(Math.max(aTot * r, 0));
-            const velocity = vCirc * (0.9 + Math.random() * 0.2);
+            const velocity = vCirc * (0.9 + this.rng() * 0.2);
             vx = tx * velocity;
             vy = ty * velocity;
 
@@ -1364,8 +1472,8 @@ export class SimulationManager {
     private gaussianRandom(): number {
         let u = 0;
         let v = 0;
-        while (u === 0) u = Math.random();
-        while (v === 0) v = Math.random();
+        while (u === 0) u = this.rng();
+        while (v === 0) v = this.rng();
         return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
@@ -1373,18 +1481,11 @@ export class SimulationManager {
      * Switches the active physics engine to the requested type.
      * @param type - The target engine's string identifier.
      */
-    async switchEngine(type: string) {
-        const quadTreeGroup = document.getElementById('ui-quadtree-group');
-        if (quadTreeGroup) {
-            quadTreeGroup.style.display = type === 'barnes' ? 'flex' : 'none';
-        }
-
-        const preset = ENGINE_PRESETS[type as keyof typeof ENGINE_PRESETS];
-        if (preset) {
-            this.params.theta = preset.theta;
-            this.params.softening = preset.softening;
-            this.params.dt = preset.timeStep;
-        }
+    async switchEngine(type: EngineType) {
+        const preset = presetFor(type);
+        this.params.theta = preset.theta;
+        this.params.softening = preset.softening;
+        this.params.dt = preset.timeStep;
         // The preset resets softening to the accretion-preset value; restore the
         // larger self-gravitating softening (no-op for the accretion preset) before
         // softResetVelocities recomputes the IC, which reads params.softening.
@@ -1408,8 +1509,6 @@ export class SimulationManager {
             this.renderer.canvas.style.display = 'block';
         }
 
-        this.activeEngineStr = 'cpu';
-
         if (type === 'brute') {
             this.engine = new BruteForceEngine(this.state);
         } else if (type === 'barnes') {
@@ -1422,8 +1521,6 @@ export class SimulationManager {
                 this.onEngineFallback('WebGPU unavailable - running CPU Barnes-Hut');
                 return;
             }
-
-            console.log("Switching to WebGPU...");
 
             try {
                 if (!this.webGpuEngine) {
@@ -1441,7 +1538,6 @@ export class SimulationManager {
                 return;
             }
 
-            this.activeEngineStr = 'gpu';
             this.webGpuEngine.setVisible(true);
 
             if (this.renderer && this.renderer.canvas) {
@@ -1450,9 +1546,18 @@ export class SimulationManager {
 
             this.engine = this.webGpuEngine;
         } else if (type === 'worker') {
+            if (!this.memory.isShared) {
+                // No cross-origin isolation: SharedArrayBuffer (and the worker's
+                // Atomics.wait) is unavailable. Fall back to main-thread Barnes-Hut.
+                this.params.engineType = 'barnes';
+                this.engine = new BarnesHutEngine(this.state);
+                this.onEngineFallback('Worker engine requires cross-origin isolation - running main-thread Barnes-Hut');
+                return;
+            }
             if (!this.workerBridge) {
                 this.workerBridge = new WorkerBridge(this.memory);
             }
+            this.workerStepsSeen = 0;
             this.engine = this.workerBridge;
         } else {
             this.engine = new BarnesHutEngine(this.state);
@@ -1471,8 +1576,13 @@ export class SimulationManager {
 
     /**
      * Completely restarts the simulation, re-initialising the galaxy and active engine.
+     * @param seed - Realization to load. Omitted - the Restart button, an engine-switch
+     *   clamp - draws a fresh one, so a plain restart is a genuinely new galaxy.
      */
-    async restart() {
+    async restart(seed?: number) {
+        // ?? not ||: restart(0) must load seed 0, not draw randomly.
+        this.setSeed(seed ?? randomUint32());
+
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = 0;
@@ -1500,6 +1610,90 @@ export class SimulationManager {
     }
 
     /**
+     * Advances the physics by the real time elapsed this frame, in fixed dt steps.
+     *
+     * Inline engines (brute/barnes/webgpu) run the fixed-timestep substep loop directly.
+     * The worker engine runs a step off-thread, so instead of stepping here we account
+     * for the steps it has *completed* and kick off at most one new step per frame:
+     * simulated time is debited only by the growth of the worker's completed-step
+     * counter, so a step dropped while the worker is busy never advances the clock and
+     * the two threads stay in sync.
+     *
+     * Split out of {@link loop} so the accounting is unit-testable without a rAF loop.
+     * @param frameSeconds - Real seconds elapsed since the previous frame (already clamped).
+     */
+    advancePhysics(frameSeconds: number) {
+        const dt = this.params.dt;
+
+        if (this.engine === this.workerBridge && this.workerBridge) {
+            const bridge = this.workerBridge;
+            const completed = bridge.getCompletedSteps();
+            this.accumulator += frameSeconds;
+            // Debit only work the worker has actually finished since we last looked.
+            const delta = completed - this.workerStepsSeen;
+            this.accumulator -= dt * delta;
+            this.stepsThisWindow += delta;
+            this.simTimeSeconds += dt * delta;
+            this.workerStepsSeen = completed;
+            if (this.accumulator < 0) this.accumulator = 0;
+            // Drop backlog rather than let it spiral after a stall.
+            const maxBacklog = dt * SimulationManager.MAX_SUBSTEPS;
+            if (this.accumulator > maxBacklog) this.accumulator = maxBacklog;
+            // One in-flight step per frame is the intended cadence; do not loop.
+            if (this.accumulator >= dt && !bridge.isBusy()) {
+                bridge.step(dt, this.params);
+            }
+            return;
+        }
+
+        this.accumulator += frameSeconds;
+        let steps = 0;
+        while (this.accumulator >= dt && steps < SimulationManager.MAX_SUBSTEPS) {
+            this.engine.step(dt, this.params);
+            this.accumulator -= dt;
+            steps++;
+        }
+        this.stepsThisWindow += steps;
+        this.simTimeSeconds += dt * steps;
+        // If we hit the cap and are still behind, drop the backlog rather than spiral.
+        if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
+    }
+
+    /**
+     * Services the energy monitor for one frame: continues an in-flight cycle, or starts
+     * a new one when the cadence allows. Cheap and non-blocking - at most one chunk of
+     * the pairwise sum per frame.
+     *
+     * Must be called *before* {@link advancePhysics}: on the worker path that method arms
+     * the next step (flipping the bridge to COMPUTING), so a caller that services energy
+     * afterwards would see `quiescent === false` on essentially every frame and never
+     * sample at all. Pre-advance is also the only point where the snapshot and
+     * {@link simTimeSeconds} describe the same instant for the inline engines.
+     *
+     * @param nowMs - The frame's `performance.now()` timestamp.
+     * @param quiescent - Whether the state arrays are safe to read (no worker step in flight).
+     */
+    private serviceEnergy(nowMs: number, quiescent: boolean): void {
+        const engine = this.engine;
+        // The GPU engine's particles never leave the device, so there
+        // is nothing to measure: stay idle and let the panel show its N/A state.
+        if (engine.kind !== 'shared-state' || !this.energyEnabled) {
+            this.energyMonitor.cancelCycle();
+            return;
+        }
+        if (this.energyMonitor.inFlight) {
+            if (this.energyMonitor.processChunk()) this.lastEnergyCycleEndMs = nowMs;
+            return;
+        }
+        if (!quiescent) return;
+        if (nowMs - this.lastEnergyCycleEndMs < SimulationManager.ENERGY_CYCLE_INTERVAL_MS) return;
+        // Cadence is measured from the last cycle's *end*, so a cycle longer than the
+        // interval simply back-to-backs; two cycles can never overlap.
+        this.energyMonitor.beginCycle(engine.state, this.params, this.simTimeSeconds);
+        if (this.energyMonitor.processChunk()) this.lastEnergyCycleEndMs = nowMs;
+    }
+
+    /**
      * The primary recursive animation step driving physics iterations and screen painted representations.
      * Also calculates standard telemetry data like frame rates.
      */
@@ -1514,55 +1708,50 @@ export class SimulationManager {
 
         this.renderer.camera.update();
 
-        const bgCanvas = document.getElementById('bg-canvas');
-        if (bgCanvas) {
-            const pPanFactor = 0.05;
-            const pZoomFactor = 0.15;
-            let bgScale = 1.0 + (this.renderer.camera.zoom - 1.0) * pZoomFactor;
-            if (bgScale < 0.83) bgScale = 0.83;
-
-            const bgX = this.renderer.camera.x * pPanFactor;
-            const bgY = (this.renderer.camera.y * this.renderer.camera.tilt) * pPanFactor;
-            bgCanvas.style.transform = `translate(${bgX}px, ${bgY}px) scale(${bgScale})`;
-        }
-
-        const isGpu = this.activeEngineStr === 'gpu' && !!this.webGpuEngine;
+        // Let the entry layer drive DOM-facing per-frame effects (parallax background)
+        // so the state layer stays DOM-free.
+        this.onFrame?.(this);
 
         this.renderer.massThreshold = this.params.massThreshold;
         this.renderer.showQuadTree = this.params.shouldShowQuadTree;
 
-        // Keep GPU camera uniforms in sync every frame (needed while paused too).
-        if (isGpu) {
-            this.params.cameraZoom = this.renderer.camera.zoom;
-            this.params.cameraX = this.renderer.camera.x;
-            this.params.cameraY = this.renderer.camera.y;
-            this.params.cameraTilt = this.renderer.camera.tilt;
+        // One isBusy() read, shared by the paint gate and the energy gate below.
+        const bridge = this.workerBridge !== null && this.engine === this.workerBridge ? this.workerBridge : null;
+        const onWorker = bridge !== null;
+        const workerIdle = bridge !== null && !bridge.isBusy();
+
+        // Worker read-gate + ordering: the worker mutates the shared arrays for the
+        // whole duration of a step, and a step can take longer than one display frame.
+        // We must paint the last *completed* frame BEFORE advancePhysics arms the next
+        // step - otherwise arming flips the status to COMPUTING and the read-gate below
+        // would skip every paint, so physics would advance invisibly (a frozen view).
+        // Painting only while idle also keeps the read-gate's anti-tearing guarantee.
+        if (workerIdle) {
+            this.renderer.quadTree = null;
+            this.renderer.render();
         }
+
+        // Energy: snapshot only while the shared arrays are quiescent and simTimeSeconds
+        // still matches them - for the worker that is exactly this pre-arm window, the
+        // same reason the paint happens here. See serviceEnergy.
+        this.serviceEnergy(now, !onWorker || workerIdle);
 
         // --- Physics: advance in fixed dt increments proportional to real time ---
         // This keeps the simulation evolving at the same wall-clock rate regardless
         // of the display refresh rate, while preserving the integrator's fixed dt.
         if (!this.params.isPaused) {
-            this.accumulator += frameSeconds;
-            const dt = this.params.dt;
-            let steps = 0;
-            while (this.accumulator >= dt && steps < SimulationManager.MAX_SUBSTEPS) {
-                if (isGpu) {
-                    this.webGpuEngine!.step(dt, this.params);
-                } else {
-                    this.engine.update(dt, this.params);
-                }
-                this.accumulator -= dt;
-                steps++;
-            }
-            // If we hit the cap and are still behind, drop the backlog rather than spiral.
-            if (steps === SimulationManager.MAX_SUBSTEPS) this.accumulator = 0;
+            this.advancePhysics(frameSeconds);
         }
 
-        // --- Render exactly once per displayed frame ---
-        if (isGpu) {
-            this.webGpuEngine!.render(this.params);
-        } else {
+        // --- Presentation: the one discriminant branch (worker painted above) ---
+        if (this.engine.kind === 'self-rendering') {
+            // Keep GPU camera uniforms in sync (needed while paused too).
+            this.params.cameraZoom = this.renderer.camera.zoom;
+            this.params.cameraX = this.renderer.camera.x;
+            this.params.cameraY = this.renderer.camera.y;
+            this.params.cameraTilt = this.renderer.camera.tilt;
+            this.engine.render(this.params);
+        } else if (!onWorker) {
             if (this.params.engineType === 'barnes') {
                 this.renderer.quadTree = (this.engine as BarnesHutEngine).root || null;
             } else {
@@ -1574,7 +1763,10 @@ export class SimulationManager {
         this.frames++;
 
         if (now - this.lastTelemetryUpdate >= 250) {
-            const fps = this.frames / ((now - this.lastTelemetryUpdate) / 1000);
+            const intervalSeconds = (now - this.lastTelemetryUpdate) / 1000;
+            const fps = this.frames / intervalSeconds;
+            this.stepsPerSecond = this.stepsThisWindow / intervalSeconds;
+            this.stepsThisWindow = 0;
             this.onTelemetry(fps, this);
             this.frames = 0;
             this.lastTelemetryUpdate = now;
