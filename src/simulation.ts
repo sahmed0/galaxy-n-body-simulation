@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import { SimulationManager } from './state';
+import { SimulationManager, presetDmDefault } from './state';
 import { setupUI, updateTelemetry, setupInteractions } from './ui';
 import { parsePermalink, randomUint32 } from './utils';
 import './global.css';
@@ -77,7 +77,14 @@ async function startApp() {
   // values and both falsy.
   if (link.engine !== undefined) simManager.params.engineType = link.engine;
   if (link.count !== undefined) simManager.params.count = link.count;
-  if (link.preset !== undefined) simManager.params.preset = link.preset;
+  if (link.preset !== undefined) {
+    simManager.params.preset = link.preset;
+    // Mirror the preset <select> handler, which resets the halo to the preset's default
+    // on every change. Without this a hand-written #p=accretion with no dm= boots an
+    // accretion disk inside the galaxy's halo - a state the UI cannot produce. An
+    // explicit dm= still wins: it is applied after this.
+    simManager.params.dmStrength = presetDmDefault(link.preset);
+  }
   if (link.gravity !== undefined) simManager.params.gravity = link.gravity;
   if (link.dmStrength !== undefined) simManager.params.dmStrength = link.dmStrength;
   simManager.setSeed(link.seed ?? randomUint32());
