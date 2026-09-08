@@ -7,16 +7,11 @@ import { parsePermalink, randomUint32 } from './utils';
 import './ui/tokens.css';
 import './global.css';
 import './ui/ui.css';
-// Self-hosted fonts no runtime CDN under COEP.
-import '@fontsource/ibm-plex-sans/300.css';
+// Self-hosted fonts - no runtime CDN under COEP.
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
-import '@fontsource/space-grotesk/300.css';
-import '@fontsource/space-grotesk/400.css';
-import '@fontsource/space-grotesk/500.css';
-import '@fontsource/space-grotesk/600.css';
-import '@fontsource/space-grotesk/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
 import '@kiwicarbon/assets/dist/kiwi.css';
 
 /**

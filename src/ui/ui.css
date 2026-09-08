@@ -326,7 +326,7 @@ input[type="number"]:focus {
 
 #telemetry-pill h1 {
   font-size: 1rem;
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-sans);
   color: #00aaff;
   text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.3);
   ;
@@ -483,7 +483,7 @@ input[type="number"]:focus {
 
 .bench-title {
   margin: 0;
-  font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 1.1rem;
   letter-spacing: 0.05rem;
 }
@@ -547,7 +547,7 @@ input[type="number"]:focus {
 
 .energy-title {
   margin: 0;
-  font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+  font-family: var(--font-sans);
   font-size: 1.1rem;
   letter-spacing: 0.05rem;
 }
