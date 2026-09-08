@@ -33,7 +33,10 @@ body {
     display: none !important;
 }
 
-canvas {
+/* Full-viewport layers only: UI canvases such as the energy plot flow inside their panels. */
+#bg-canvas,
+#sim-canvas,
+#webgpu-canvas {
     display: block;
     position: fixed;
     inset: 0;
