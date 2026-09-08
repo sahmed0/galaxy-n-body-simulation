@@ -120,7 +120,7 @@ async function startApp() {
 
   simManager.startLoop();
 
-  // Opt-in performance harness: `sim.html?bench` pulls in the bench overlay as a
+  // Opt-in performance harness: `/?bench` pulls in the bench overlay as a
   // separate async chunk, keeping it out of the main bundle for normal visitors.
   if (new URLSearchParams(location.search).has('bench')) {
     const { initBench } = await import('./bench/benchmark');

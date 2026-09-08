@@ -33,7 +33,7 @@ function samplePosition(page: Page, i: number): Promise<number | null> {
  * Navigates to the sim and waits for it to boot (manager exposed + a live FPS reading).
  * @param path - Where to boot; defaults to a bare sim. Pass a permalink to boot from one.
  */
-async function bootSim(page: Page, path = '/sim.html'): Promise<void> {
+async function bootSim(page: Page, path = '/'): Promise<void> {
     await page.goto(path);
     await page.waitForFunction(() => '__sim' in window, undefined, { timeout: 15_000 });
     // #tel-fps starts at "--" and becomes a positive number once the loop is running.
@@ -180,7 +180,7 @@ test('energy panel shows the N/A state on the GPU engine', async ({ page }) => {
 test('bench overlay appears with ?bench', async ({ page }) => {
     // The bench harness is a separate async chunk loaded only when ?bench is present.
     // Assert the overlay mounts; do NOT run the sweep in CI (it is long and manual).
-    await page.goto('/sim.html?bench');
+    await page.goto('/?bench');
     await page.waitForFunction(() => '__sim' in window, undefined, { timeout: 15_000 });
     await expect(page.locator('#bench-overlay')).toBeVisible();
     await expect(page.locator('#bench-run')).toBeVisible();
@@ -198,7 +198,7 @@ test('star-count input clamps to the brute-force cap', async ({ page }) => {
 });
 
 // A CPU engine keeps these cases off the GPU path, which headless CI cannot run.
-const PERMALINK = '/sim.html#s=12345&n=5000&e=barnes&p=galaxy&g=1&dm=250';
+const PERMALINK = '/#s=12345&n=5000&e=barnes&p=galaxy&g=1&dm=250';
 
 test('a permalink applies its seed, count and engine at boot', async ({ page }) => {
     await bootSim(page, PERMALINK);

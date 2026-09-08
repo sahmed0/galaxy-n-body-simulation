@@ -2,18 +2,11 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { defineConfig } from 'vite';
-import { resolve } from 'path';
 
 export default defineConfig({
     base: './',
     build: {
         target: 'esnext', // Necessary for WebGPU and modern JS features
-        rollupOptions: {
-            input: {
-                main: resolve(__dirname, 'index.html'),
-                sim: resolve(__dirname, 'sim.html'),
-            },
-        },
     },
     plugins: [
         {

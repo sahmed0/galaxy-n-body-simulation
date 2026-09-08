@@ -27,629 +27,126 @@
   <meta property="twitter:title" content="N-Body Simulation | Sajid Ahmed" />
   <meta property="twitter:description" content="Interactive N-body astrophysics simulation powered by WebGPU." />
   <meta property="twitter:image" content="https://galaxy.sajidahmed.co.uk/preview.png" />
-
-  <style>
-    /* Global Reset & Spacing */
-    body {
-      margin: 0;
-      min-height: 100vh;
-      overflow-y: auto;
-      overflow-x: hidden;
-      background-color: #05080f;
-      font-family: "IBM Plex Sans", sans-serif;
-      color: #e0e6ed;
-      user-select: none;
-    }
-
-    /* Fixed Background Canvas */
-    #bg-canvas {
-      position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 100vw !important;
-      height: 100vh !important;
-      z-index: 0 !important;
-      pointer-events: none !important;
-    }
-
-    /* Staggered Fade-in Animations */
-    @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(1.5rem);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    /* Main Grid Layout */
-    .control-panel {
-      display: grid;
-      grid-template-columns: 1fr;
-      grid-template-rows: auto auto repeat(4, auto);
-      gap: 1.5rem;
-      padding: 2rem 1.5rem;
-      box-sizing: border-box;
-      width: 100%;
-      max-width: 40rem;
-      margin: 0 auto;
-      justify-items: center;
-      position: relative;
-      z-index: 10;
-    }
-
-    .main-header,
-    .center-console,
-    .widget-tl,
-    .widget-tr,
-    .widget-bl,
-    .widget-br {
-      animation: fadeInUp 0.6s ease-out forwards;
-      opacity: 0;
-    }
-
-    .main-header {
-      animation-delay: 0.1s;
-    }
-
-    .center-console {
-      animation-delay: 0.2s;
-    }
-
-    .widget-tl {
-      animation-delay: 0.3s;
-    }
-
-    .widget-tr {
-      animation-delay: 0.4s;
-    }
-
-    .widget-bl {
-      animation-delay: 0.5s;
-    }
-
-    .widget-br {
-      animation-delay: 0.6s;
-    }
-
-    /* Main Header */
-    .main-header {
-      grid-row: 1;
-      width: 100%;
-      box-sizing: border-box;
-      background: linear-gradient(135deg,
-          rgba(11, 13, 16, 0.5),
-          rgba(11, 13, 16, 0.2));
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 0.1rem solid rgba(255, 255, 255, 0.15);
-      border-radius: 0.5rem;
-      padding: 1rem 2rem;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.37);
-    }
-
-    .socials a {
-      color: #00aaff;
-      font-size: 40px;
-      display: inline-flex;
-      text-decoration: none;
-      padding: 0.5rem;
-      pointer-events: auto;
-      transition: transform 0.2s ease;
-      will-change: transform;
-    }
-
-    .socials a:hover {
-      color: #ff5722;
-      transform: scale(1.2) rotate(2deg);
-    }
-
-    .main-header-title {
-      color: #00aaff;
-      font-size: 1.5rem;
-      font-weight: bold;
-      letter-spacing: 0.15rem;
-      text-transform: uppercase;
-      text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.8);
-      font-family: "Space Grotesk", sans-serif;
-      text-align: center;
-      margin: 0 0 0.25rem 0;
-    }
-
-    .main-header-subtitle {
-      color: #a0c0d0;
-      font-size: 1rem;
-      letter-spacing: 0.05rem;
-      font-family: "IBM Plex Sans", sans-serif;
-      text-align: center;
-      margin: 0;
-    }
-
-    .main-header-subtitle a {
-      color: inherit;
-      text-decoration: none;
-      transition: color 0.2s ease;
-    }
-
-    .main-header-subtitle a:hover {
-      color: #00aaff;
-    }
-
-    /* Center Launch Area */
-    .center-console {
-      grid-row: 2;
-      width: 100%;
-      box-sizing: border-box;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem 0;
-    }
-
-    .launch-button {
-      width: 15rem;
-      height: 15rem;
-      border-radius: 50%;
-      background: linear-gradient(135deg,
-          rgba(0, 170, 255, 0.3),
-          rgba(0, 80, 150, 0.1));
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 0.2rem solid rgba(255, 255, 255, 0.2);
-      box-shadow:
-        0 0.5rem 2rem rgba(0, 170, 255, 0.3),
-        inset 0 0 1rem rgba(0, 170, 255, 0.3);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      position: relative;
-      cursor: pointer;
-      overflow: hidden;
-      transition: all 0.3s ease;
-      text-decoration: none;
-    }
-
-    .launch-button:hover {
-      background: linear-gradient(135deg,
-          rgba(0, 170, 255, 0.4),
-          rgba(0, 80, 150, 0.2));
-      box-shadow:
-        0 1rem 3rem rgba(0, 170, 255, 0.5),
-        inset 0 0 1.5rem rgba(0, 170, 255, 0.4);
-      transform: scale(1.02);
-      border: 0.2rem solid rgba(255, 255, 255, 0.3);
-    }
-
-    .launch-button:active {
-      transform: scale(0.95);
-      box-shadow:
-        0 0.5rem 1rem rgba(0, 170, 255, 0.4),
-        inset 0 0 2rem rgba(0, 170, 255, 0.6);
-    }
-
-    .launch-button::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      border-radius: 50%;
-      background:
-        repeating-linear-gradient(0deg,
-          transparent,
-          transparent 1.2rem,
-          rgba(255, 255, 255, 0.1) 1.25rem),
-        repeating-linear-gradient(90deg,
-          transparent,
-          transparent 1.2rem,
-          rgba(255, 255, 255, 0.1) 1.25rem);
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .launch-text {
-      position: relative;
-      z-index: 3;
-      font-size: 2rem;
-      font-weight: 900;
-      color: #ffffff;
-      letter-spacing: 0.3rem;
-      text-shadow:
-        0 0 0.5rem rgba(0, 170, 255, 0.8),
-        0 0 1rem #00aaff;
-      font-family: "Space Grotesk", sans-serif;
-    }
-
-    /* Vertical Widgets */
-    .corner-widget {
-      width: 100%;
-      box-sizing: border-box;
-      background: linear-gradient(135deg,
-          rgba(11, 13, 16, 0.5),
-          rgba(11, 13, 16, 0.2));
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 0.1rem solid rgba(255, 255, 255, 0.15);
-      border-radius: 0.5rem;
-      box-shadow:
-        0 0.5rem 2rem rgba(0, 0, 0, 0.37),
-        inset 0 0 1rem rgba(0, 170, 255, 0.1);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      position: relative;
-      transition: all 0.2s ease;
-      overflow: hidden;
-      aspect-ratio: 4 / 1;
-      min-height: 8rem;
-    }
-
-    .corner-widget::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background:
-        repeating-linear-gradient(0deg,
-          transparent,
-          transparent 0.9rem,
-          rgba(255, 255, 255, 0.05) 1rem),
-        repeating-linear-gradient(90deg,
-          transparent,
-          transparent 0.9rem,
-          rgba(255, 255, 255, 0.05) 1rem);
-      z-index: 1;
-      pointer-events: none;
-    }
-
-    .corner-widget:hover {
-      box-shadow:
-        0 0.5rem 2rem rgba(0, 170, 255, 0.2),
-        inset 0 0 1rem rgba(0, 170, 255, 0.3);
-      border-color: rgba(0, 170, 255, 0.5);
-      background: linear-gradient(135deg,
-          rgba(11, 13, 16, 0.6),
-          rgba(11, 13, 16, 0.3));
-    }
-
-    .corner-widget:active {
-      transform: scale(0.98);
-    }
-
-    /* Widget Vertical Row Order */
-    .widget-tl {
-      grid-row: 3;
-    }
-
-    .widget-tr {
-      grid-row: 4;
-    }
-
-    .widget-bl {
-      grid-row: 5;
-    }
-
-    .widget-br {
-      grid-row: 6;
-    }
-
-    .widget-label {
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: #ffffff;
-      text-transform: uppercase;
-      letter-spacing: 0.1rem;
-      text-shadow: 0 0 0.3rem rgba(0, 170, 255, 0.5);
-      z-index: 2;
-      text-align: center;
-      padding: 0 1rem;
-      font-family: "Space Grotesk", sans-serif;
-    }
-
-    /* Greebles */
-    .greeble-bar {
-      position: absolute;
-      bottom: 0.8rem;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 60%;
-      height: 0.25rem;
-      background: transparent;
-      display: flex;
-      gap: 0.25rem;
-    }
-
-    .greeble-indicator {
-      flex: 1;
-      height: 100%;
-      background-color: rgba(255, 255, 255, 0.2);
-      border-radius: 0.1rem;
-    }
-
-    .greeble-indicator.active {
-      background-color: #00aaff;
-      box-shadow: 0 0 0.3rem #00aaff;
-    }
-
-    .greeble-indicator.amber {
-      background-color: #ff9900;
-      box-shadow: 0 0 0.3rem #ff9900;
-    }
-
-    .screw {
-      position: absolute;
-      width: 0.5rem;
-      height: 0.5rem;
-      background-color: rgba(255, 255, 255, 0.1);
-      border-radius: 50%;
-      box-shadow:
-        inset 0.05rem 0.05rem 0.1rem rgba(255, 255, 255, 0.2),
-        inset -0.05rem -0.05rem 0.1rem rgba(0, 0, 0, 0.5);
-    }
-
-    .screw-tl {
-      top: 0.5rem;
-      left: 0.5rem;
-    }
-
-    .screw-tr {
-      top: 0.5rem;
-      right: 0.5rem;
-    }
-
-    .screw-bl {
-      bottom: 0.5rem;
-      left: 0.5rem;
-    }
-
-    .screw-br {
-      bottom: 0.5rem;
-      right: 0.5rem;
-    }
-
-    /* Modal Overlay */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(5, 8, 15, 0.6);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem;
-    }
-
-    .modal-overlay.active {
-      display: flex;
-    }
-
-    /* Terminal Readout Window */
-    .terminal-box {
-      background: linear-gradient(135deg,
-          rgba(10, 15, 30, 0.6),
-          rgba(10, 15, 30, 0.8));
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      border: 0.1rem solid rgba(0, 170, 255, 0.3);
-      border-radius: 0.5rem;
-      width: 100%;
-      max-width: 50rem;
-      height: 80vh;
-      box-shadow:
-        0 1rem 3rem rgba(0, 0, 0, 0.5),
-        inset 0 0 1.5rem rgba(0, 170, 255, 0.2);
-      display: flex;
-      flex-direction: column;
-      position: relative;
-    }
-
-    .terminal-header {
-      background: rgba(0, 170, 255, 0.1);
-      border-bottom: 0.1rem solid rgba(0, 170, 255, 0.3);
-      padding: 1rem 1.5rem;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-radius: 0.5rem 0.5rem 0 0;
-    }
-
-    .terminal-title {
-      color: #00aaff;
-      font-size: 1.2rem;
-      font-weight: bold;
-      letter-spacing: 0.1rem;
-      margin: 0;
-      text-transform: uppercase;
-      font-family: "Space Grotesk", sans-serif;
-      text-shadow: 0 0 0.5rem rgba(0, 170, 255, 0.5);
-    }
-
-    .close-button {
-      background: transparent;
-      border: 0.1rem solid rgba(255, 77, 77, 0.5);
-      color: #ff4d4d;
-      font-size: 1.2rem;
-      font-weight: bold;
-      width: 2rem;
-      height: 2rem;
-      border-radius: 0.25rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .close-button:hover {
-      background: rgba(255, 77, 77, 0.2);
-      border-color: #ff4d4d;
-      box-shadow: 0 0 0.5rem rgba(255, 77, 77, 0.5);
-    }
-
-    .terminal-content {
-      flex: 1;
-      padding: 2rem;
-      overflow-y: auto;
-      color: #a0c0d0;
-      line-height: 1.6;
-      font-family: "IBM Plex Sans", sans-serif;
-    }
-
-    .terminal-content h2,
-    .terminal-content h3 {
-      font-family: "Space Grotesk", sans-serif;
-      color: #ffffff;
-      margin-top: 0;
-    }
-
-    .terminal-content h3 {
-      color: #00aaff;
-      font-size: 1.1rem;
-      border-bottom: 0.05rem solid rgba(0, 170, 255, 0.3);
-      padding-bottom: 0.5rem;
-      margin-bottom: 1rem;
-    }
-
-    .katex-display {
-      background: rgba(0, 0, 0, 0.3);
-      padding: 1rem;
-      border-radius: 0.25rem;
-      border: 0.05rem solid rgba(100, 200, 255, 0.1);
-      overflow-x: auto;
-      margin: 1rem 0;
-    }
-
-    #data-store {
-      display: none;
-    }
-
-    .terminal-content::-webkit-scrollbar {
-      width: 0.5rem;
-    }
-
-    .terminal-content::-webkit-scrollbar-track {
-      background: rgba(0, 0, 0, 0.2);
-      border-left: 0.05rem solid rgba(0, 170, 255, 0.1);
-    }
-
-    .terminal-content::-webkit-scrollbar-thumb {
-      background: rgba(0, 170, 255, 0.5);
-      border-radius: 0.25rem;
-    }
-  </style>
 </head>
 
 <body>
-  <!-- Existing Background Canvas -->
-  <canvas id="bg-canvas"></canvas>
-
-  <div class="control-panel">
-    <!-- Main Header -->
-    <div class="main-header">
-      <h1 class="main-header-title">N-Body Simulation</h1>
-      <div class="socials">
-        <a href="https://sajidahmed.co.uk" rel="noopener"><i class="kiwi-logo"></i></a>
-        <a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank" rel="noopener"
-          aria-label="GitHub"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16"
-            fill="currentColor" aria-hidden="true">
+    <!-- Mobile Toggles -->
+    <button id="ui-toggle-telemetry" class="mobile-toggle tactical-glass" title="Toggle Telemetry">i</button>
+    <button id="ui-toggle-controls" class="mobile-toggle tactical-glass" title="Toggle Controls"><svg
+            xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"
+            aria-hidden="true">
             <path
-              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
-            </svg></a>
-      </div>
-      <h2 class="main-header-subtitle">© Sajid Ahmed 2026</h2>
+                d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.49.49 0 0 0-.48-.41h-3.84a.49.49 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94 0 .32.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.13.22.39.31.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.09.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z" />
+        </svg></button>
+
+    <!-- Control Island -->
+    <nav id="control-island" class="tactical-glass">
+        <button id="ui-toggle-pin" class="tactical-button pin-button" title="Toggle UI Pin">📌</button>
+        <div class="control-group">
+            <label for="ui-engine">Physics Engine</label>
+            <select id="ui-engine" class="tactical-select">
+                <option value="brute">CPU: Brute Force</option>
+                <option value="barnes">CPU: Barnes-Hut</option>
+                <option value="worker">CPU: Barnes-Hut (Worker)</option>
+                <option value="webgpu">GPU: WebGPU</option>
+            </select>
+        </div>
+        <div class="control-group" id="ui-quadtree-group" style="display: none;">
+            <label>&nbsp;</label>
+            <div style="display: flex; align-items: center; height: 100%;">
+                <input type="checkbox" id="ui-show-grid" class="tactical-input" style="width: auto; margin-right: 5px;">
+                <label for="ui-show-grid"
+                    style="margin: 0; cursor: pointer; text-transform: none; color: white;">QuadTree</label>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="ui-preset">Simulation Preset</label>
+            <select id="ui-preset" class="tactical-select">
+                <option value="galaxy">Galaxy (spiral)</option>
+                <option value="accretion">Accretion Disk (SMBH)</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="ui-stars">Stars</label>
+            <input type="number" id="ui-stars" class="tactical-input" min="1000" max="200000" step="1000" value="10000">
+        </div>
+        <div class="control-group">
+            <div class="label-row">
+                <label for="ui-gravity">Gravity</label>
+                <span id="ui-gravity-value" class="slider-value">1.0</span>
+            </div>
+            <input type="range" id="ui-gravity" min="0.1" max="10.0" step="0.1" value="1.0">
+        </div>
+        <div class="control-group">
+            <div class="label-row">
+                <label for="ui-dark-matter">Dark Matter</label>
+                <span id="ui-dark-matter-value" class="slider-value">0.0</span>
+            </div>
+            <input type="range" id="ui-dark-matter" min="0.0" max="1000.0" step="10.0" value="0.0">
+        </div>
+        <div class="control-group">
+            <label>&nbsp;</label>
+            <button id="ui-pause" class="tactical-button">Pause</button>
+        </div>
+
+        <div class="control-group">
+            <label>&nbsp;</label>
+            <button id="ui-restart" class="tactical-button">Restart</button>
+        </div>
+        <div class="control-group">
+            <label>&nbsp;</label>
+            <button id="ui-toggle-energy" class="tactical-button">ΔE Panel</button>
+        </div>
+        <div class="control-group">
+            <label>&nbsp;</label>
+            <button id="ui-share" class="tactical-button">Share</button>
+        </div>
+    </nav>
+
+    <canvas id="bg-canvas"></canvas>
+    <canvas id="sim-canvas"></canvas>
+
+    <!-- Telemetry Pill -->
+    <div id="telemetry-pill" class="tactical-glass">
+        <h1>N-Body Simulation</h1>
+        <div class="telemetry-row">
+            <span class="telemetry-label">FPS</span>
+            <span id="tel-fps" class="telemetry-value">--</span>
+        </div>
+        <div class="telemetry-row">
+            <span class="telemetry-label">INTERACTIONS/S</span>
+            <span id="tel-interactions" class="telemetry-value">--</span>
+        </div>
+        <div class="telemetry-row gflops-row" style="display: none;">
+            <span class="telemetry-label">EST. GFLOPS</span>
+            <span id="tel-gflops" class="telemetry-value">--</span>
+        </div>
+        <div class="telemetry-row gpu-row" style="display: none;">
+            <span class="telemetry-label">GPU DISPATCH</span>
+            <span id="tel-gpu-dispatch" class="telemetry-value">-- ms</span>
+        </div>
+        <div class="telemetry-row gpu-row" style="display: none;">
+            <span class="telemetry-label">GPU MEMORY</span>
+            <span id="tel-gpu-mem" class="telemetry-value">-- MB</span>
+        </div>
+        <div class="telemetry-row worker-row" style="display: none;">
+            <span class="telemetry-label">WORKER STEP</span>
+            <span id="tel-worker-step" class="telemetry-value">-- ms</span>
+        </div>
+        <div id="sim-info">
+            <a href="https://sajidahmed.co.uk" target="_blank" rel="noopener"><i class="kiwi-logo"></i></a>
+            <a href="https://github.com/sahmed0/galaxy-n-body-simulation.git" target="_blank" rel="noopener"
+                aria-label="GitHub"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 16 16"
+                    fill="currentColor" aria-hidden="true">
+                    <path
+                        d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
+                    </svg></a>
+            <p>© Sajid Ahmed 2026</p>
+        </div>
     </div>
 
-    <!-- Top Left Widget -->
-    <div class="corner-widget widget-tl" data-target="PHYS-01">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">Computational Astrophysics</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator amber"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-      </div>
-    </div>
-
-    <!-- Top Right Widget -->
-    <div class="corner-widget widget-tr" data-target="MATH-02">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">Numerical Analysis</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator amber"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-      </div>
-    </div>
-
-    <!-- Bottom Left Widget -->
-    <div class="corner-widget widget-bl" data-target="ALGO-03">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">Algorithmic Architecture</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator amber"></div>
-        <div class="greeble-indicator active"></div>
-      </div>
-    </div>
-
-    <!-- Bottom Right Widget -->
-    <div class="corner-widget widget-br" data-target="SYST-04">
-      <div class="screw screw-tl"></div>
-      <div class="screw screw-tr"></div>
-      <div class="screw screw-bl"></div>
-      <div class="screw screw-br"></div>
-      <div class="widget-label">High Performance Computing</div>
-      <div class="greeble-bar">
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator active"></div>
-        <div class="greeble-indicator amber"></div>
-      </div>
-    </div>
-
-    <!-- Center Launch Area -->
-    <div class="center-console">
-      <a href="sim.html" class="launch-button">
-        <span class="launch-text">LAUNCH</span>
-      </a>
-    </div>
-  </div>
-
-  <!-- Modal Overlay -->
-  <div class="modal-overlay" id="info-modal">
-    <div class="terminal-box">
-      <div class="terminal-header">
-        <h2 class="terminal-title" id="modal-title">SYS.INF // READOUT</h2>
-        <button class="close-button" id="modal-close">X</button>
-      </div>
-      <div class="terminal-content" id="modal-content">
-        <!-- Content injected via JS -->
-      </div>
-    </div>
-  </div>
-
-  <!-- Data Store (Hidden) -->
-  <div id="data-store">
+    <!-- Data Store (Hidden) -->
+    <div id="data-store" hidden>
     <div id="content-PHYS-01">
       <h2>Computational Astrophysics</h2>
 
@@ -922,9 +419,9 @@
         </li>
       </ul>
     </div>
-  </div>
+    </div>
 
-  <script type="module" src="/src/landing.ts"></script>
+    <script type="module" src="/src/main.ts"></script>
 </body>
 
 </html>
