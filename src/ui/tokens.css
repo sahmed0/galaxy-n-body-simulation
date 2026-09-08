@@ -1,0 +1,62 @@
+/* Copyright (c) 2026 Sajid Ahmed */
+:root {
+  /* Surfaces */
+  /* Page behind the starfield canvas. Matches its black fill so the edges the parallax
+     uncovers when zoomed out stay invisible. */
+  --color-page: #000000;
+  --color-bg: #101114;
+  --color-bg-canvas: #08090b;
+  --color-panel: #16171c;
+  --color-panel-alt: #1d1f26;
+  --color-border: #24262c;
+  --color-scrim: rgba(0, 0, 0, 0.5);
+
+  /* Text. Muted is the dimmest text color: >= 4.5:1 on both panel colors. */
+  --color-text-primary: #e8e8ea;
+  --color-text-secondary: #adaeb4;
+  --color-text-muted: #8e8f97;
+
+  /* Accent (the only interactive/active hue) */
+  --color-accent: #2dd4bf;
+  --color-accent-contrast: #0d1512;
+
+  /* Status (telemetry health + banners; never the accent) */
+  --color-status-warning: #fbbf24;
+  --color-status-critical: #f87171;
+
+  /* Slider thumb */
+  --color-thumb: #ffffff;
+  --shadow-thumb: 0 1px 3px rgba(0, 0, 0, 0.5);
+
+  /* Elevation */
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.25);
+
+  /* Radius */
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Type */
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+
+  /* Layout */
+  --topbar-height: 56px;
+  --sidebar-width: 272px;
+  --chrome-margin: 12px;
+  /* First free y-coordinate below the floating top bar. */
+  --chrome-offset: calc(var(--topbar-height) + 2 * var(--chrome-margin));
+}

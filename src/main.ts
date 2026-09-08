@@ -4,8 +4,8 @@
 import { SimulationManager, presetDmDefault } from './state';
 import { setupUI, updateTelemetry, setupInteractions } from './ui';
 import { parsePermalink, randomUint32 } from './utils';
+import './ui/tokens.css';
 import './global.css';
-import './style.css';
 import './ui/ui.css';
 // Self-hosted fonts no runtime CDN under COEP.
 import '@fontsource/ibm-plex-sans/300.css';

@@ -1,48 +1,66 @@
 /* Copyright (c) 2026 Sajid Ahmed */
-/* Fonts (IBM Plex Sans, Space Grotesk) are self-hosted via @fontsource, imported from the
-   TypeScript entry points (simulation.ts, landing.ts) so nothing is fetched from a CDN. */
+/* Fonts are self-hosted via @fontsource and imported from src/main.ts. */
 :root {
-    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-family: var(--font-sans);
     line-height: 1.6;
     font-weight: 400;
-
     color-scheme: dark;
-    color: rgba(255, 255, 255, 0.87);
-    background-color: #000108;
-
-
+    color: var(--color-text-primary);
+    background-color: var(--color-page);
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
+html,
 body {
     margin: 0;
-    min-width: 320px;
-    min-height: 100vh;
-    background: radial-gradient(circle at center, #000108 0%, #000000 100%);
-    overflow-x: hidden;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    touch-action: none; /* Reserve pointer gestures for the simulation. */
 }
 
+body {
+    min-width: 320px;
+    background: var(--color-page);
+}
+
+/* Author `display` rules must never un-hide an element carrying the hidden attribute. */
+[hidden] {
+    display: none !important;
+}
+
+canvas {
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    touch-action: none;
+}
+
+#sim-canvas {
+    z-index: 1;
+}
+
+#webgpu-canvas {
+    z-index: 2;
+}
 
 h1,
 h2,
 h3 {
     margin: 0;
-    font-family: 'Space Grotesk', sans-serif;
-    color: #ffffff;
-    letter-spacing: 1px;
-}
-
-h1 {
-    font-size: 1.5rem;
-    text-transform: uppercase;
-    letter-spacing: 2px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    color: var(--color-text-primary);
 }
 
 p {
     margin: 0 0 1rem 0;
     font-size: 1rem;
-    color: rgba(255, 255, 255, 0.75);
+    color: var(--color-text-secondary);
 }
