@@ -6,7 +6,7 @@ import { el, elOrNull, formatCount, encodePermalink } from '../utils';
 import { EnergyPanel } from './EnergyPanel';
 import { isEngineType } from '../physics';
 import type { EngineType } from '../physics';
-import { setSliderFill } from './slider';
+import { countToSliderPos, sliderPosToCount, setSliderFill } from './slider';
 
 /** How long the "link copied" confirmation stays up. Long enough to read, short enough
  *  not to outlive the action it confirms. */
@@ -125,6 +125,16 @@ export function setupUI(sim: SimulationManager) {
     const gravityVal = elOrNull<HTMLElement>('ui-gravity-value');
     const darkMatterVal = elOrNull<HTMLElement>('ui-dark-matter-value');
     const showGridCheckbox = elOrNull<HTMLInputElement>('ui-show-grid');
+    const starsVal = elOrNull<HTMLElement>('ui-stars-value');
+
+    // The same slider position means a different count under each engine's cap, so the
+    // thumb must be re-derived after *any* engine change, not only a clamping one.
+    const syncStars = () => {
+        const cap = ENGINE_MAX_COUNT[sim.params.engineType];
+        starsInput.value = countToSliderPos(sim.params.count, cap).toString();
+        if (starsVal) starsVal.textContent = sim.params.count.toLocaleString();
+        setSliderFill(starsInput);
+    };
 
     // The ΔE panel is optional: `elOrNull` (never `el`, which would throw past the
     // try/catch above and kill *all* UI wiring on a page without the button). No button
@@ -198,10 +208,10 @@ export function setupUI(sim: SimulationManager) {
         disableGpuOption(engineSelect);
         engineSelect.value = sim.params.engineType;
         updateQuadTreeVisibility(sim.params.engineType);
+        syncStars();
         showBanner(reason);
     };
-    starsInput.value = sim.params.count.toString();
-    starsInput.max = ENGINE_MAX_COUNT[sim.params.engineType].toString();
+    syncStars();
     gravityInput.value = sim.params.gravity.toString();
     if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);
     setSliderFill(gravityInput);
@@ -221,15 +231,14 @@ export function setupUI(sim: SimulationManager) {
         // clamps the current count and re-inits (a smaller N requires re-allocating buffers,
         // which switchEngine alone does not do - restart rebuilds them).
         const cap = ENGINE_MAX_COUNT[newType];
-        starsInput.max = cap.toString();
         const clamped = sim.params.count > cap;
         if (clamped) {
             sim.params.count = cap;
-            starsInput.value = cap.toString();
             showBanner(`Star count clamped to ${cap.toLocaleString()} (${ENGINE_LABEL[newType]} limit)`);
         }
 
         sim.params.engineType = newType;
+        syncStars();
         updateQuadTreeVisibility(newType);
         await sim.switchEngine(newType);
         if (clamped) await sim.restart();
@@ -251,20 +260,16 @@ export function setupUI(sim: SimulationManager) {
         });
     }
 
-    starsInput.addEventListener('change', (e) => {
-        const target = e.target as HTMLInputElement;
-        const val = parseInt(target.value, 10);
-        if (isNaN(val)) return;
-
+    // Preview on every drag tick; commit (and reset the energy baseline) only on release,
+    // mirroring the gravity/DM sliders.
+    starsInput.addEventListener('input', () => {
         const cap = ENGINE_MAX_COUNT[sim.params.engineType];
-        const clamped = Math.max(1_000, Math.min(val, cap));
-        if (clamped !== val) {
-            target.value = clamped.toString();
-            if (val > cap) {
-                showBanner(`Star count clamped to ${cap.toLocaleString()} (${ENGINE_LABEL[sim.params.engineType]} limit)`);
-            }
-        }
-        sim.params.count = clamped;
+        if (starsVal) starsVal.textContent = sliderPosToCount(Number(starsInput.value), cap).toLocaleString();
+        setSliderFill(starsInput);
+    });
+    starsInput.addEventListener('change', () => {
+        sim.params.count = sliderPosToCount(Number(starsInput.value), ENGINE_MAX_COUNT[sim.params.engineType]);
+        syncStars();
         sim.resetEnergyBaseline();
     });
 

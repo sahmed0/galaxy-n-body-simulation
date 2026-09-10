@@ -106,8 +106,8 @@
         <div class="sidebar-section">
             <div class="sidebar-section-label">Physics</div>
             <div class="field">
-                <label for="ui-stars">Stars</label>
-                <input type="number" id="ui-stars" class="select" min="1000" max="200000" step="1000" value="10000" />
+                <div class="field-row"><label for="ui-stars">Stars</label><span id="ui-stars-value" class="field-value">--</span></div>
+                <input type="range" id="ui-stars" class="slider" min="0" max="1000" step="1" value="0" />
             </div>
             <div class="field">
                 <div class="field-row"><label for="ui-gravity">Gravity</label><span id="ui-gravity-value" class="field-value">1.0</span></div>

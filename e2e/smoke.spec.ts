@@ -186,15 +186,24 @@ test('bench overlay appears with ?bench', async ({ page }) => {
     await expect(page.locator('#bench-run')).toBeVisible();
 });
 
-test('star-count input clamps to the brute-force cap', async ({ page }) => {
+test('star slider maps to the engine cap and clamps on engine switch', async ({ page }) => {
     await bootSim(page);
+    await selectEngine(page, 'barnes');
+
+    await page.locator('#ui-stars').evaluate((el) => {
+        const input = el as HTMLInputElement;
+        input.value = '1000';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await expect(page.locator('#ui-stars-value')).toHaveText('50,000');
+
     await selectEngine(page, 'brute');
-
-    const stars = page.locator('#ui-stars');
-    await stars.fill('999999');
-    await stars.dispatchEvent('change');
-
-    await expect(stars).toHaveValue('20000');
+    await expect(page.locator('#ui-stars-value')).toHaveText('20,000');
+    await expect(page.locator('#ui-stars')).toHaveValue('1000');
+    // Match the text: headless boot may already show a "WebGPU unavailable" banner.
+    await expect(page.locator('#engine-banner')).toContainText('clamped to 20,000');
+    expect(await page.evaluate(() => (window as unknown as { __sim: SimHandle }).__sim.params.count)).toBe(20000);
 });
 
 // A CPU engine keeps these cases off the GPU path, which headless CI cannot run.
