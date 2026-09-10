@@ -4,6 +4,8 @@
 import { SimulationManager, presetDmDefault } from './state';
 import { setupUI, updateTelemetry, setupInteractions } from './ui';
 import { parsePermalink, randomUint32 } from './utils';
+import { TopBar } from './ui/TopBar';
+import { Sidebar } from './ui/Sidebar';
 import './ui/tokens.css';
 import './global.css';
 import './ui/ui.css';
@@ -56,6 +58,9 @@ const CANVAS_ID = 'sim-canvas';
  * and enters the infinite render loop.
  */
 async function startApp() {
+  const topBar = new TopBar({ onToggleSidebar: () => sidebar.toggle() });
+  const sidebar = new Sidebar({ onChange: (open) => topBar.setSidebarExpanded(open) });
+
   drawSpaceBackground();
   window.addEventListener('resize', drawSpaceBackground);
 

@@ -2,14 +2,18 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import { SimulationManager, presetDmDefault, ENGINE_MAX_COUNT } from '../state';
-import { el, elOrNull, formatRate, encodePermalink } from '../utils';
+import { el, elOrNull, formatCount, encodePermalink } from '../utils';
 import { EnergyPanel } from './EnergyPanel';
 import { isEngineType } from '../physics';
 import type { EngineType } from '../physics';
+import { setSliderFill } from './slider';
 
 /** How long the "link copied" confirmation stays up. Long enough to read, short enough
  *  not to outlive the action it confirms. */
 const SHARE_BANNER_MS = 4_000;
+
+/** Lazily created in updateTelemetry, which runs every frame, so the query is built once. */
+let narrowMq: MediaQueryList | undefined;
 
 /** Readable engine names for clamp banners. */
 const ENGINE_LABEL: Record<EngineType, string> = {
@@ -200,8 +204,10 @@ export function setupUI(sim: SimulationManager) {
     starsInput.max = ENGINE_MAX_COUNT[sim.params.engineType].toString();
     gravityInput.value = sim.params.gravity.toString();
     if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);
+    setSliderFill(gravityInput);
     darkMatterInput.value = sim.params.dmStrength.toString();
     if (darkMatterVal) darkMatterVal.textContent = sim.params.dmStrength.toFixed(0);
+    setSliderFill(darkMatterInput);
     if (showGridCheckbox) showGridCheckbox.checked = sim.params.shouldShowQuadTree;
 
     updateQuadTreeVisibility(sim.params.engineType);
@@ -239,6 +245,7 @@ export function setupUI(sim: SimulationManager) {
             sim.params.dmStrength = presetDmDefault(sim.params.preset);
             darkMatterInput.value = sim.params.dmStrength.toString();
             if (darkMatterVal) darkMatterVal.textContent = sim.params.dmStrength.toFixed(0);
+            setSliderFill(darkMatterInput);
             // Changing the preset rebuilds the initial conditions.
             await sim.restart();
         });
@@ -265,6 +272,7 @@ export function setupUI(sim: SimulationManager) {
         const target = e.target as HTMLInputElement;
         sim.params.gravity = parseFloat(target.value);
         if (gravityVal) gravityVal.textContent = sim.params.gravity.toFixed(1);
+        setSliderFill(target);
     });
 
     // The leapfrog half-step stagger and adaptive dt both depend on G, so once the
@@ -278,6 +286,7 @@ export function setupUI(sim: SimulationManager) {
         const target = e.target as HTMLInputElement;
         sim.params.dmStrength = parseFloat(target.value);
         if (darkMatterVal) darkMatterVal.textContent = sim.params.dmStrength.toFixed(0);
+        setSliderFill(target);
     });
 
     // The halo potential is part of the measured energy, so changing its strength
@@ -297,95 +306,21 @@ export function setupUI(sim: SimulationManager) {
     pauseBtn.addEventListener('click', () => {
         sim.params.isPaused = !sim.params.isPaused;
         pauseBtn.textContent = sim.params.isPaused ? 'Resume' : 'Pause';
-        if (sim.params.isPaused) {
-            pauseBtn.style.color = '#ff5722';
-            pauseBtn.style.borderColor = '#ff5722';
-        } else {
-            pauseBtn.style.color = '';
-            pauseBtn.style.borderColor = '';
-        }
+        pauseBtn.classList.toggle('is-paused', sim.params.isPaused);
     });
 
     restartBtn.addEventListener('click', async () => {
         await sim.restart();
     });
 
-    // Universal Toggles Logic
-    const toggleTelemetryBtn = document.getElementById('ui-toggle-telemetry');
-    const toggleControlsBtn = document.getElementById('ui-toggle-controls');
-    const telemetryPill = document.getElementById('telemetry-pill');
-    const controlIsland = document.getElementById('control-island');
-    const togglePinBtn = document.getElementById('ui-toggle-pin');
-    
-    let isPinned = window.innerWidth > 768;
-
-    const applyPinState = () => {
-        if (togglePinBtn) {
-            if (isPinned) {
-                togglePinBtn.classList.add('pinned');
-            } else {
-                togglePinBtn.classList.remove('pinned');
-            }
-        }
-    };
-
-    applyPinState();
-
-    if (isPinned && controlIsland) {
-        // By default on large displays, show controls
-        controlIsland.classList.add('ui-active');
-    }
-
-    if (isPinned && telemetryPill) {
-        telemetryPill.classList.add('ui-active');
-    }
-
-    if (togglePinBtn) {
-        togglePinBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            isPinned = !isPinned;
-            applyPinState();
-        });
-    }
-
-    if (toggleTelemetryBtn && telemetryPill && controlIsland) {
-        toggleTelemetryBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            telemetryPill.classList.toggle('ui-active');
-        });
-    }
-
-    if (toggleControlsBtn && controlIsland && telemetryPill) {
-        toggleControlsBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            controlIsland.classList.toggle('ui-active');
-        });
-    }
-
-    // Close overlays when clicking canvas or outside
+    // Tapping outside the ΔE panel closes it on narrow screens, as before. On desktop it stays
+    // open while the user pans the canvas.
+    const narrow = window.matchMedia('(max-width: 768px)');
     document.addEventListener('click', (e) => {
-        if (isPinned) return;
-
-        const target = e.target as HTMLElement;
-        if (toggleTelemetryBtn?.contains(target) || toggleControlsBtn?.contains(target)) {
-            return;
-        }
-        if (energyToggle?.contains(target)) {
-            return;
-        }
-
-        if (telemetryPill && controlIsland) {
-            if (!telemetryPill.contains(target) && !controlIsland.contains(target)) {
-                telemetryPill.classList.remove('ui-active');
-                controlIsland.classList.remove('ui-active');
-            }
-        }
-
-        // Separate from the block above by design: that one is fail-closed (it needs both
-        // elements to exist), and the panel's close must not depend on unrelated elements.
-        if (energyPanel && !energyPanel.root.contains(target)) {
-            energyPanel.close();
-        }
+        const target = e.target as Node;
+        if (!narrow.matches || !energyPanel) return;
+        if (energyToggle?.contains(target) || energyPanel.root.contains(target)) return;
+        energyPanel.close();
     });
 }
 
@@ -397,6 +332,7 @@ export function setupUI(sim: SimulationManager) {
 export function updateTelemetry(fps: number, sim: SimulationManager) {
     const fpsEl = document.getElementById('tel-fps');
     const interactionsEl = document.getElementById('tel-interactions');
+    const interactionsAltEl = document.getElementById('tel-interactions-alt');
     const gflopsEl = document.getElementById('tel-gflops');
     const gpuDispatchEl = document.getElementById('tel-gpu-dispatch');
     const gpuMemEl = document.getElementById('tel-gpu-mem');
@@ -410,8 +346,11 @@ export function updateTelemetry(fps: number, sim: SimulationManager) {
     else fpsEl.classList.add('tel-critical');
 
     // Honest interaction rate: exact per-step pairwise count × physics steps/s.
+    // formatCount, not formatRate: both readouts sit next to a unit label that already
+    // spells out "/s" ("int/s" in the top bar, "Interactions/s" in the dropdown).
     const interactionsPerSecond = (sim.engine.getLastInteractionCount?.() ?? 0) * sim.stepsPerSecond;
-    interactionsEl.innerText = formatRate(interactionsPerSecond);
+    interactionsEl.innerText = formatCount(interactionsPerSecond);
+    if (interactionsAltEl) interactionsAltEl.innerText = formatCount(interactionsPerSecond);
 
     const isGpu = !!(sim.webGpuEngine && sim.engine === sim.webGpuEngine);
     const isBrute = sim.params.engineType === 'brute' && !isGpu;
@@ -442,12 +381,26 @@ export function updateTelemetry(fps: number, sim: SimulationManager) {
     }
 
     // Worker step time: shown only while the off-thread engine is active.
+    const workerActive = !!(sim.workerBridge && sim.engine === sim.workerBridge);
     const workerRows = document.querySelectorAll('.worker-row');
-    if (sim.workerBridge && sim.engine === sim.workerBridge) {
+    if (workerActive && sim.workerBridge) {
         workerRows.forEach((el) => (el as HTMLElement).style.display = 'flex');
         const workerStepEl = document.getElementById('tel-worker-step');
         if (workerStepEl) workerStepEl.innerText = sim.workerBridge.getLastStepMs().toFixed(2) + ' ms';
     } else {
         workerRows.forEach((el) => (el as HTMLElement).style.display = 'none');
+    }
+
+    // The dropdown arrow appears only when at least one of its rows applies - on narrow
+    // screens interactions/s always moves there, so the arrow always applies there too.
+    const hasRows = isBrute || isGpu || workerActive || (narrowMq ??= window.matchMedia('(max-width: 768px)')).matches;
+    const moreToggle = document.getElementById('tel-more-toggle');
+    const morePanel = document.getElementById('tel-more-panel');
+    if (moreToggle && morePanel && moreToggle.hidden === hasRows) {
+        moreToggle.hidden = !hasRows;
+        if (!hasRows) {
+            morePanel.hidden = true;
+            moreToggle.setAttribute('aria-expanded', 'false');
+        }
     }
 }
