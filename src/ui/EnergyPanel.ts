@@ -59,7 +59,7 @@ export class EnergyPanel {
 
         const root = document.createElement('div');
         root.id = 'energy-panel';
-        root.className = 'tactical-glass energy-panel';
+        root.className = 'energy-panel';
         root.innerHTML = `
             <h2 class="energy-title">Energy conservation</h2>
             <div class="energy-plot-wrap">
@@ -70,7 +70,7 @@ export class EnergyPanel {
             <div class="telemetry-row"><span class="telemetry-label">E₀</span><span id="energy-e0" class="telemetry-value">-</span></div>
             <div class="telemetry-row"><span class="telemetry-label">Σpₓ</span><span id="energy-px" class="telemetry-value">-</span></div>
             <div class="telemetry-row"><span class="telemetry-label">Σp_y</span><span id="energy-py" class="telemetry-value">-</span></div>
-            <div class="telemetry-row"><span class="telemetry-label">SAMPLES</span><span id="energy-count" class="telemetry-value">0</span></div>
+            <div class="telemetry-row"><span class="telemetry-label">Samples</span><span id="energy-count" class="telemetry-value">0</span></div>
         `;
         document.body.appendChild(root);
         this.root = root;
@@ -238,7 +238,7 @@ export class EnergyPanel {
 
         const halfH = h / 2 - PLOT_PADDING;
         const span = w - 2 * PLOT_PADDING;
-        ctx.strokeStyle = '#00aaff';
+        ctx.strokeStyle = '#2dd4bf'; // --color-accent: canvas 2D cannot read CSS variables
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         for (let k = 0; k < series.length; k++) {

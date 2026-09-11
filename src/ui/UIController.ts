@@ -74,7 +74,7 @@ function showBanner(message: string, autoHideMs?: number) {
     if (!banner) {
         banner = document.createElement('div');
         banner.id = 'engine-banner';
-        banner.className = 'engine-banner tactical-glass';
+        banner.className = 'engine-banner';
         banner.setAttribute('role', 'alert');
         document.body.appendChild(banner);
     }

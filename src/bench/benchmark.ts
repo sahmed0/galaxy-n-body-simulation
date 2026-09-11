@@ -85,17 +85,17 @@ export function initBench(sim: SimulationManager): void {
 
     const overlay = document.createElement('div');
     overlay.id = 'bench-overlay';
-    overlay.className = 'tactical-glass bench-overlay ui-active';
+    overlay.className = 'bench-overlay ui-active';
     overlay.innerHTML = `
         <h2 class="bench-title">Benchmark</h2>
         <div class="bench-controls">
-            <button id="bench-run" class="tactical-button">Run benchmark</button>
-            <button id="bench-parity" class="tactical-button">Kernel parity check</button>
-            <button id="bench-copy" class="tactical-button">Copy markdown</button>
-            <button id="bench-close" class="tactical-button">Close</button>
+            <button id="bench-run" class="btn btn-secondary">Run benchmark</button>
+            <button id="bench-parity" class="btn btn-secondary">Kernel parity check</button>
+            <button id="bench-copy" class="btn btn-secondary">Copy markdown</button>
+            <button id="bench-close" class="btn btn-secondary">Close</button>
         </div>
         <div id="bench-progress" class="bench-progress">Idle.</div>
-        <textarea id="bench-output" class="tactical-input bench-output" readonly
+        <textarea id="bench-output" class="bench-output" readonly
             placeholder="Results appear here as a GitHub-markdown table."></textarea>
     `;
     document.body.appendChild(overlay);
