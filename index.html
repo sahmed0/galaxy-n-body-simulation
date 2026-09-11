@@ -135,11 +135,18 @@
     <canvas id="bg-canvas"></canvas>
     <canvas id="sim-canvas"></canvas>
 
-    <!-- Data Store (Hidden) -->
-    <div id="data-store" hidden>
-    <div id="content-PHYS-01">
-      <h2>Computational Astrophysics</h2>
-
+    <div id="about-scrim" class="about-scrim" hidden></div>
+    <div id="about-panel" class="about-panel" role="dialog" aria-modal="true" aria-labelledby="about-title" inert>
+        <div class="about-panel-header">
+            <h2 id="about-title" class="about-panel-title">About</h2>
+            <button id="about-close" class="icon-btn" aria-label="Close"><span data-icon="x"></span></button>
+        </div>
+        <div class="about-panel-body">
+            <div class="accordion-section">
+                <button class="accordion-trigger" aria-expanded="false" aria-controls="about-phys">
+                    Computational Astrophysics <span data-icon="chevronDown"></span>
+                </button>
+                <div id="about-phys" class="accordion-content" hidden>
       <h3>Newtonian Gravity</h3>
       <p>
         The core of the simulation integrates Newton's law of universal
@@ -215,7 +222,7 @@
         The same N-body engine drives two distinct astrophysical regimes,
         selectable from the simulation's control panel:
       </p>
-      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+      <ul>
         <li>
           <strong>Galaxy (spiral):</strong> A massive, self-gravitating
           exponential disk tuned to the Toomre $Q$ stability criterion and
@@ -230,11 +237,13 @@
           default so the SMBH alone governs the orbits.
         </li>
       </ul>
-    </div>
-
-    <div id="content-MATH-02">
-      <h2>Numerical Analysis</h2>
-
+                </div>
+            </div>
+            <div class="accordion-section">
+                <button class="accordion-trigger" aria-expanded="false" aria-controls="about-math">
+                    Numerical Analysis <span data-icon="chevronDown"></span>
+                </button>
+                <div id="about-math" class="accordion-content" hidden>
       <h3>Symplectic Leapfrog Integration</h3>
       <p>
         Standard explicit Euler integration diverges rapidly for orbiting
@@ -255,11 +264,13 @@
         high-fidelity N-body dynamics where performance and accuracy must be
         strictly balanced.
       </p>
-    </div>
-
-    <div id="content-ALGO-03">
-      <h2>Algorithmic Architecture</h2>
-
+                </div>
+            </div>
+            <div class="accordion-section">
+                <button class="accordion-trigger" aria-expanded="false" aria-controls="about-algo">
+                    Algorithmic Architecture <span data-icon="chevronDown"></span>
+                </button>
+                <div id="about-algo" class="accordion-content" hidden>
       <h3>Brute Force Gravity (O(N²))</h3>
       <p>
         The most accurate, yet computationally expensive, method for
@@ -301,7 +312,7 @@
         introduce an Active/Passive heuristic, splitting the system into two
         mass-distinct sets:
       </p>
-      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+      <ul>
         <li>
           <strong>Active Set ($M_{heavy}$):</strong> The top percentage of
           most massive stars. These stars are inserted into the QuadTree and
@@ -321,11 +332,13 @@
         massive visual density while preserving accurate macroscopic N-body
         dynamics.
       </p>
-    </div>
-
-    <div id="content-SYST-04">
-      <h2>High Performance Computing</h2>
-
+                </div>
+            </div>
+            <div class="accordion-section">
+                <button class="accordion-trigger" aria-expanded="false" aria-controls="about-syst">
+                    High Performance Computing <span data-icon="chevronDown"></span>
+                </button>
+                <div id="about-syst" class="accordion-content" hidden>
       <h3>CPU Physics Engines & Threading</h3>
       <p>
         The simulation provides three selectable CPU-bound engines, each
@@ -333,7 +346,7 @@
         Brute Force engine, a Barnes-Hut engine, and an off-thread Worker
         engine that runs Barnes-Hut in a dedicated Web Worker.
       </p>
-      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+      <ul>
         <li>
           <strong>Brute Force Engine:</strong> Implements an $O(N^2)$
           direct-sum calculation using kick-drift <em>leapfrog</em> integration
@@ -379,7 +392,7 @@
         both physics integration and rendering to the Graphics Processing Unit
         via the WebGPU API.
       </p>
-      <ul style="color: rgba(255, 255, 255, 0.75); line-height: 1.6">
+      <ul>
         <li>
           <strong>Compute Shaders:</strong> Gravitational forces and velocity
           updates are calculated in parallel across thousands of GPU cores
@@ -408,7 +421,13 @@
           discarding and mathematical gradients.
         </li>
       </ul>
-    </div>
+                </div>
+            </div>
+        </div>
+        <div class="about-panel-footer">
+            <a href="https://sajidahmed.co.uk" target="_blank" rel="noopener" class="icon-btn" aria-label="Sajid Ahmed's website"><i class="kiwi-logo"></i></a>
+            <span>&copy; Sajid Ahmed 2026</span>
+        </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>
