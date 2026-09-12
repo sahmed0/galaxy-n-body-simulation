@@ -38,7 +38,6 @@ vi.mock('../physics', async (importOriginal) => {
         updateUniforms = vi.fn();
         step = vi.fn();
         render = vi.fn();
-        getLastDispatchTime = () => 0;
         getMemoryUsageMB = () => 0;
         dispose = vi.fn();
         constructor() {

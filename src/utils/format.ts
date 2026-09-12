@@ -27,13 +27,3 @@ export function formatCount(n: number): string {
     }
     return `${Math.round(n)}`;
 }
-
-/**
- * Like {@link formatCount} but suffixed with "/s" for a per-second rate,
- * e.g. "1.24 G/s", "840 M/s", "12.3 k/s".
- * @param n - The rate to format (per second).
- * @returns The compact human-readable rate string.
- */
-export function formatRate(n: number): string {
-    return `${formatCount(n)}/s`;
-}

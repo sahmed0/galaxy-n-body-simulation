@@ -41,7 +41,7 @@ describe('encodePermalink / parsePermalink round-trip', () => {
 });
 
 describe('parsePermalink hostile input', () => {
-    it('drops every field of the spec hostile case', () => {
+    it('drops every field of the hostile-input case', () => {
         // s=-1 out of uint32 range; e=<script> is not an engine, which drops n with it;
         // g=abc is NaN.
         expect(parsePermalink('#s=-1&n=1e99&e=<script>&g=abc')).toEqual({});

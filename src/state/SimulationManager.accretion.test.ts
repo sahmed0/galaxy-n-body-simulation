@@ -131,7 +131,7 @@ describe('SimulationManager - accretion central SMBH', () => {
         // Sanity: the split actually raised the accretion mass above the galaxy's.
         expect(sim.state.mass[0]).toBeGreaterThan(GALAXY_CENTRAL_BH_MASS);
 
-        // Warm glow (RGB ~ 1, 1, 0.85), not the old invisible black point.
+        // Warm glow (RGB ~ 1, 1, 0.85) so the dominant SMBH is visible.
         expect(sim.state.colors[0]).toBe(1);
         expect(sim.state.colors[1]).toBe(1);
         // Float32 storage, so compare approximately.

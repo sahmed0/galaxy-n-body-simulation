@@ -1,8 +1,8 @@
 /**
- * Wrapper class managing the SharedArrayBuffer memory allocation for multithreaded workers.
+ * Copyright (c) 2026 Sajid Ahmed
  */
 /**
- * Copyright (c) 2026 Sajid Ahmed
+ * Wrapper class managing the SharedArrayBuffer memory allocation for multithreaded workers.
  */
 export class PhysicsMemory {
     public buffer: SharedArrayBuffer | ArrayBuffer;

@@ -16,11 +16,10 @@
  * Each analytic potential is the exact one whose gradient is the corresponding kernel
  * force, so the total is a genuinely conserved quantity for the softened system.
  *
- * The potential *formulas* come from `src/physics/energy` - the single source of truth
- * they now share with the production `EnergyMonitor`. The summation loops below stay
- * deliberately independent of that module: the formulas are checked
- * once, and this suite remains an independent check on the summing. The frozen bands
- * are unchanged by that extraction, which is what proves it was numerically inert.
+ * The potential *formulas* come from `src/physics/energy`, the single source of truth
+ * shared with the production `EnergyMonitor`. The summation loops below stay
+ * deliberately independent of that module, so this suite is a second check on the
+ * summing, not a restatement of it.
  *
  * All ICs are seeded (mulberry32) and deterministic; the reported bands were measured
  * here and frozen with margin, so a regression that breaks conservation trips the test.

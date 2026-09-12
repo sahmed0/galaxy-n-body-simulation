@@ -12,7 +12,7 @@
  * plus the coincident-particle / MIN_CELL_SIZE edge case (the subdivision cutoff that
  * stops infinite recursion when many particles share a coordinate).
  *
- * Pool gotcha (recorded in PROGRESS): `QuadTree.pool` is a *static* array. Subdivision
+ * Pool gotcha: `QuadTree.pool` is a *static* array. Subdivision
  * pulls child nodes from it and `free()` returns them, reset, for the next test. So every
  * test frees its root in a `finally` / afterEach - otherwise a later test's `create` could
  * hand back a node still wired into this test's tree. `create`/`reset` fully reinitialise a
@@ -22,18 +22,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { QuadTree, type Boundary } from '../../src/physics/QuadTree';
 import { PhysicsState } from '../../src/physics/PhysicsState';
-
-/** Deterministic mulberry32 PRNG - reproducible cloud without the rng util. */
-function mulberry32(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a |= 0;
-        a = (a + 0x6d2b79f5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
+import { mulberry32 } from '../utils/rng';
 
 interface Body { x: number; y: number; m: number; }
 

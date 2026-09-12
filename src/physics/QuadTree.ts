@@ -267,37 +267,4 @@ export class QuadTree {
             }
         }
     }
-
-    /**
-     * Collects this node's boundary and all descendants' into one flat list, used to
-     * draw the tree for debugging.
-     * @param boundaries - Accumulator the boundaries are pushed into.
-     * @returns The same list, now containing this subtree's boundaries.
-     */
-    getAllBoundaries(boundaries: Boundary[] = []): Boundary[] {
-        boundaries.push(this.boundary);
-        if (this.divided) {
-            this.northwest!.getAllBoundaries(boundaries);
-            this.northeast!.getAllBoundaries(boundaries);
-            this.southwest!.getAllBoundaries(boundaries);
-            this.southeast!.getAllBoundaries(boundaries);
-        }
-        return boundaries;
-    }
-
-    /**
-     * Zeroes structural data without freeing the object back to the pooling arrays.
-     */
-    clear(): void {
-        // Truncate rather than reassign so pooled nodes keep their backing array.
-        this.points.length = 0;
-        this.divided = false;
-        this.northwest = null;
-        this.northeast = null;
-        this.southwest = null;
-        this.southeast = null;
-        this.totalMass = 0;
-        this.centerOfMassX = 0;
-        this.centerOfMassY = 0;
-    }
 }

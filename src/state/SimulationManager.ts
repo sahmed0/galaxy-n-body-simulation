@@ -59,8 +59,7 @@ export const DISK_INNER_RADIUS = 10;
 
 /**
  * Mass of the galaxy preset's fixed central black hole (the source mass folded
- * into the measured rotation curve via {@link SimulationManager.bhAcc}). The
- * value is unchanged from the old shared central-mass constant. The accretion
+ * into the measured rotation curve via {@link SimulationManager.bhAcc}). The accretion
  * preset uses its own, far larger {@link ACCRETION_BH_MASS}.
  */
 export const GALAXY_CENTRAL_BH_MASS = 2600;
@@ -95,9 +94,9 @@ export function presetDmDefault(preset: 'accretion' | 'galaxy'): number {
 
 /**
  * Exponential scale length R_d of the self-gravitating disk:
- * Sigma(R) = Sigma0 * exp(-R/R_d). Unlike the old uniform-in-radius (Sigma ~ 1/R)
- * profile, this is finite at the centre (no sigma_R cap needed) and tapers
- * smoothly (no hard edge to seed instabilities).
+ * Sigma(R) = Sigma0 * exp(-R/R_d). The profile is finite at the centre (no sigma_R
+ * cap needed) and tapers smoothly (no hard edge to seed instabilities), unlike a
+ * uniform-in-radius Sigma ~ 1/R disk.
  */
 export const DISK_SCALE_LENGTH = 150;
 

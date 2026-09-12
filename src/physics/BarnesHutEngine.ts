@@ -106,7 +106,7 @@ export class BarnesHutEngine implements SharedStateEngine {
         // When a fixed central black hole is active (self-grav preset), index 0 is
         // its pinned, inert marker: it is excluded from the tree (not a source),
         // never kicked, and never integrated. Its pull on the disk is the analytic
-        // SMBH term in §2b, with its own softening. `start` skips it everywhere.
+        // SMBH term (smbhAccel in kernels.ts), with its own softening. `start` skips it everywhere.
         const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
 
         // --- Leapfrog Step ---
@@ -151,7 +151,7 @@ export class BarnesHutEngine implements SharedStateEngine {
 
         // Insert only particles with mass >= threshold. Skip index 0 when it is the
         // pinned BH marker: it must not act as a tree source (GALAXY_CENTRAL_BH_MASS would swamp
-        // the disk field) - its pull comes from the analytic SMBH term in §2b.
+        // the disk field) - its pull comes from the analytic SMBH term (smbhAccel in kernels.ts).
         for (let i = start; i < n; i++) {
             if (mass[i] >= massThreshold) {
                 this.root.insert(i, this.state);

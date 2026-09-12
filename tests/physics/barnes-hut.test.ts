@@ -26,18 +26,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BarnesHutEngine, PhysicsState } from '../../src/physics';
 import type { PhysicsParams } from '../../src/physics/types';
 import { pairwiseAccel, type Accel } from '../../src/physics/kernels';
-
-/** Deterministic mulberry32 PRNG - keeps the cloud reproducible without the rng util. */
-function mulberry32(seed: number): () => number {
-    let a = seed >>> 0;
-    return () => {
-        a |= 0;
-        a = (a + 0x6d2b79f5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
+import { mulberry32 } from '../utils/rng';
 
 const N = 256;
 const SEED = 0x5eed; // recorded for reproducibility; the envelopes below are measured here

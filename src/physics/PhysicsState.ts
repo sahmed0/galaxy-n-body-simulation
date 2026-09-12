@@ -47,23 +47,4 @@ export class PhysicsState {
       this.colors = new Float32Array(n * 3);
     }
   }
-
-  /**
-   * Reallocates all arrays for a new body count.
-   * Warning: this allocates fresh (non-shared) arrays and does NOT resize any
-   * backing SharedArrayBuffer. A shared-memory resize must instead recreate the
-   * owning PhysicsMemory.
-   * @param n - New number of bodies.
-   */
-  public resize(n: number): void {
-    // Throw error or handle properly if using shared memory, as we can't resize a SAB view easily without reallocating everything.
-    // For now, assume this is only called when NOT using shared memory or appropriately handled by caller.
-    this.n = n;
-    this.positionX = new Float32Array(n);
-    this.positionY = new Float32Array(n);
-    this.velocityX = new Float32Array(n);
-    this.velocityY = new Float32Array(n);
-    this.mass = new Float32Array(n);
-    this.colors = new Float32Array(n * 3);
-  }
 }

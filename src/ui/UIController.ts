@@ -101,7 +101,7 @@ function showBanner(message: string, autoHideMs?: number) {
  */
 export function setupUI(sim: SimulationManager) {
     // Required controls: if any is missing the template is broken, so `el` throws
-    // and we bail out (preserving the old fail-soft behaviour of logging + return).
+    // and we bail out (fail-soft: log and return).
     let engineSelect: HTMLSelectElement;
     let starsInput: HTMLInputElement;
     let gravityInput: HTMLInputElement;
@@ -351,7 +351,7 @@ export function updateTelemetry(fps: number, sim: SimulationManager) {
     else fpsEl.classList.add('tel-critical');
 
     // Honest interaction rate: exact per-step pairwise count × physics steps/s.
-    // formatCount, not formatRate: both readouts sit next to a unit label that already
+    // formatCount with no "/s" suffix: both readouts sit next to a unit label that already
     // spells out "/s" ("int/s" in the top bar, "Interactions/s" in the dropdown).
     const interactionsPerSecond = (sim.engine.getLastInteractionCount?.() ?? 0) * sim.stepsPerSecond;
     interactionsEl.innerText = formatCount(interactionsPerSecond);

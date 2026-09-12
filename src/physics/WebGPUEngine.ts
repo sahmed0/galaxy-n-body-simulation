@@ -587,14 +587,6 @@ export class WebGPUEngine implements SelfRenderingEngine {
     }
 
     /**
-     * Wall-clock time the last compute dispatch took to complete, in milliseconds.
-     * @returns Duration of the most recent compute pass.
-     */
-    getLastDispatchTime(): number {
-        return this.lastDispatchTimeMs;
-    }
-
-    /**
      * Duration of the last measured compute pass. Prefers a real GPU-timeline
      * measurement from timestamp-query when one is fresh; otherwise reports the
      * `onSubmittedWorkDone` wall-clock approximation.

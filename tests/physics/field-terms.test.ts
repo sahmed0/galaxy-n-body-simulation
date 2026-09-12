@@ -17,7 +17,7 @@ import {
     type Accel,
 } from '../../src/physics/kernels';
 
-// The kernels now write into a caller-owned Accel. These thin wrappers allocate that
+// The kernels write into a caller-owned Accel. These thin wrappers allocate that
 // out-param and return it, so the analytic assertions below can read the result
 // directly (per-call allocation is fine in tests).
 function pairwiseAccel(

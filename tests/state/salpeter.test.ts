@@ -66,7 +66,7 @@ describe('Salpeter mass sampling (seeded RNG)', () => {
         const masses = drawMasses(SEED, N);
         const D = ksStatistic(masses, (m) => salpeterCDF(m, M_MIN, M_MAX, P));
         const dCrit = ksCriticalValue(N, ALPHA);
-        // Diagnostic: record the margin (see PROGRESS.md). D ~ O(1/√N) ≈ 3e-3,
+        // Diagnostic: record the margin. D ~ O(1/√N) ≈ 3e-3,
         // dCrit ≈ 5.1e-3 → healthy margin, not knife-edge.
         expect(D).toBeLessThan(dCrit);
     });

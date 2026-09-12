@@ -67,7 +67,7 @@ fn sim_update(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
       continue;
     }
     // Index 0 is the pinned BH marker, not a pairwise source - its pull is the
-    // analytic SMBH term in §4.5 (with its own softening). Skip it here.
+    // analytic SMBH term below (with its own softening). Skip it here.
     if (i == 0u && params.blackHoleMass > 0.0) {
       continue;
     }

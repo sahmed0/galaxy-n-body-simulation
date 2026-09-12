@@ -1,4 +1,7 @@
 /**
+ * Copyright (c) 2026 Sajid Ahmed
+ */
+/**
  * WGSL uniform layout guard.
  *
  * Pins the TS uniform write order ({@link buildUniformFields}) to the WGSL `Params` struct in

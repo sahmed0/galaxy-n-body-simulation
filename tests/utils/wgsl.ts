@@ -1,4 +1,7 @@
 /**
+ * Copyright (c) 2026 Sajid Ahmed
+ */
+/**
  * Static WGSL struct parser + uniform-layout calculator (no GPU).
  *
  * Used by `tests/gpu/uniform-layout.test.ts` to compute the byte offsets WGSL assigns to each

@@ -106,7 +106,7 @@ export class BruteForceEngine implements SharedStateEngine {
 
         // When a fixed central black hole is active (self-grav preset), index 0 is
         // its pinned, inert marker: it is neither a pairwise source nor a receiver -
-        // its pull on the disk is the analytic SMBH term (§4) with its own softening.
+        // its pull on the disk is the analytic SMBH term (smbhAccel in kernels.ts) with its own softening.
         // Start every pairwise/central loop at `start` so index 0 is left untouched.
         const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
 
@@ -114,9 +114,8 @@ export class BruteForceEngine implements SharedStateEngine {
         // Each heavy body gets the full Newtonian sum over the other heavies; the
         // kernel returns acceleration (no dt/mass[i]) and the integrator applies dt.
         // Views over [start, activeCount) exclude the pinned BH (index 0) as both a
-        // source and a receiver and cap the sum at the active set, matching the old
-        // loop bounds. (Drops the i<j symmetric optimisation in exchange for a single
-        // force law shared with Barnes-Hut.)
+        // source and a receiver and cap the sum at the active set. (No i<j symmetric
+        // optimisation: the cost is a single force law shared with Barnes-Hut.)
         const hn = activeCount - start;
         // Exact pairwise count: heavy↔heavy (each of hn heavies sums over the other hn−1)
         // plus heavy→light (hn heavies acting one-way on the n−activeCount passive tracers;

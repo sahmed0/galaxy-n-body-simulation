@@ -106,7 +106,7 @@ describe('EnergyMonitor - chunked pairwise sum', () => {
     const N = 200;
 
     it('reproduces a direct double-loop sum exactly, at any chunk budget', () => {
-        // gravity ≠ 1 on purpose: the prototype this was extracted from hardcoded G = 1,
+        // gravity ≠ 1 on purpose: a hardcoded G = 1 would pass at G = 1 and fail here,
         // so a non-unit G is what asserts production actually reads params.gravity.
         const params: PhysicsParams = {
             gravity: 1.3,
