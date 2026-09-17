@@ -96,18 +96,16 @@ export class BarnesHutEngine implements SharedStateEngine {
         const py = this.state.positionY;
         const vx = this.state.velocityX;
         const vy = this.state.velocityY;
-        const mass = this.state.mass;
-        // When active/passive is disabled, every body participates in the tree
-        // (full N-body). Otherwise only bodies at/above the mass threshold are
-        // inserted, so sub-threshold bodies act as massless test particles.
-        // Masses are strictly positive, so -Infinity admits all of them.
-        const massThreshold = params.useActivePassive ? (params.massThreshold || 0) : -Infinity;
 
         // When a fixed central black hole is active (self-grav preset), index 0 is
         // its pinned, inert marker: it is excluded from the tree (not a source),
         // never kicked, and never integrated. Its pull on the disk is the analytic
         // SMBH term (smbhAccel in kernels.ts), with its own softening. `start` skips it everywhere.
         const start = (params.blackHoleMass || 0) > 0 ? 1 : 0;
+        // The source set is the index range [start, srcEnd), mirroring BruteForceEngine
+        // and the WGSL kernels. With active/passive off every body is a source (full
+        // N-body); with it on, passive bodies (indices >= srcEnd) are receivers only.
+        const srcEnd = params.useActivePassive ? Math.min(params.activeCount, n) : n;
 
         // --- Leapfrog Step ---
         // 1. Rebuild QuadTree (at time t)
@@ -116,14 +114,18 @@ export class BarnesHutEngine implements SharedStateEngine {
         let minX = Infinity, maxX = -Infinity;
         let minY = Infinity, maxY = -Infinity;
 
-        // Find the absolute minimum and maximum bounds of all particles this frame
-        for (let i = 0; i < n; i++) {
-            if (mass[i] >= massThreshold) {
-                if (px[i] < minX) minX = px[i];
-                if (px[i] > maxX) maxX = px[i];
-                if (py[i] < minY) minY = py[i];
-                if (py[i] > maxY) maxY = py[i];
-            }
+        // Bound the source set only: the walk is a query on the source tree, so a
+        // receiver outside the box is fine.
+        for (let i = start; i < srcEnd; i++) {
+            if (px[i] < minX) minX = px[i];
+            if (px[i] > maxX) maxX = px[i];
+            if (py[i] < minY) minY = py[i];
+            if (py[i] > maxY) maxY = py[i];
+        }
+        // No sources: give the empty tree a finite root so every receiver gets zero pairwise pull.
+        if (srcEnd <= start) {
+            minX = minY = -1;
+            maxX = maxY = 1;
         }
 
         // Add a small 1% padding to the boundaries to ensure edge particles fit cleanly
@@ -149,13 +151,11 @@ export class BarnesHutEngine implements SharedStateEngine {
         // Get a new root from the pool
         this.root = QuadTree.create(boundary, 4);
 
-        // Insert only particles with mass >= threshold. Skip index 0 when it is the
+        // Insert the source range [start, srcEnd). Index 0 is skipped when it is the
         // pinned BH marker: it must not act as a tree source (GALAXY_CENTRAL_BH_MASS would swamp
         // the disk field) - its pull comes from the analytic SMBH term (smbhAccel in kernels.ts).
-        for (let i = start; i < n; i++) {
-            if (mass[i] >= massThreshold) {
-                this.root.insert(i, this.state);
-            }
+        for (let i = start; i < srcEnd; i++) {
+            this.root.insert(i, this.state);
         }
 
         this.root.calculateMassDistribution(this.state);

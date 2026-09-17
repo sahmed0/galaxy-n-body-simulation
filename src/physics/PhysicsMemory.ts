@@ -23,7 +23,7 @@ export class PhysicsMemory {
     // region at the tail of the buffer. A slot therefore has exactly one meaning - integer OR float -
     // and the two view types must never both claim the same index. Reserved allocation:
     //   int slots   {0, 10, 11}      - status flag + worker heartbeat/timing counters
-    //   float slots {1..9, 12..14}   - physics params + worker param passthrough
+    //   float slots {1..8, 12..14}   - physics params + worker param passthrough (9 unused)
     // Adding a new slot means picking an index outside both used sets, in the correct view.
     static readonly FLAG_STATUS = 0; // 0: IDLE, 1: COMPUTING
     static readonly STATUS_IDLE = 0;
@@ -35,11 +35,10 @@ export class PhysicsMemory {
     static readonly PARAM_DT = 2;                  // float: step size
     static readonly PARAM_SOFTENING = 3;           // float: pairwise softening length
     static readonly PARAM_THETA = 4;               // float: Barnes-Hut opening angle
-    static readonly PARAM_MASS_THRESHOLD = 5;      // float: Barnes-Hut source mass threshold
-    static readonly PARAM_DM_STRENGTH = 6;         // float: dark matter halo strength
-    static readonly PARAM_DM_CORE_RADIUS = 7;      // float: dark matter halo core radius
-    static readonly PARAM_BH_MASS = 8;             // float: pinned central black hole mass
-    static readonly PARAM_BH_SOFTENING = 9;        // float: central black hole softening
+    static readonly PARAM_DM_STRENGTH = 5;         // float: dark matter halo strength
+    static readonly PARAM_DM_CORE_RADIUS = 6;      // float: dark matter halo core radius
+    static readonly PARAM_BH_MASS = 7;             // float: pinned central black hole mass
+    static readonly PARAM_BH_SOFTENING = 8;        // float: central black hole softening
     static readonly PARAM_ACTIVE_COUNT = 12;       // float: activeCount passed to the worker step
     static readonly PARAM_USE_ACTIVE_PASSIVE = 13; // float: useActivePassive flag (0/1)
     static readonly PARAM_INTERACTIONS = 14;       // float: worker's interaction count for the last step

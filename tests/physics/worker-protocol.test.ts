@@ -11,13 +11,14 @@
  * The manager-side debit accounting (advancePhysics) is covered here too, with a stub
  * bridge, to prove simulated time advances only by *completed* worker steps.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { PhysicsMemory } from '../../src/physics/PhysicsMemory';
 import { PhysicsState } from '../../src/physics/PhysicsState';
 import { BarnesHutEngine } from '../../src/physics';
 import { serviceOneStep } from '../../src/physics/physics.worker';
 import { SimulationManager } from '../../src/state';
 import type { PhysicsParams } from '../../src/physics/types';
+import { cloneState } from '../utils/state';
 
 const N = 64;
 
@@ -46,7 +47,6 @@ function defaultParams(): PhysicsParams {
         dt: 0.016,
         softening: 0.5,
         theta: 1.0,
-        massThreshold: 0,
         activeCount: N,
         useActivePassive: false,
         dmStrength: 0,
@@ -63,7 +63,6 @@ function postStep(memory: PhysicsMemory, params: PhysicsParams): void {
     f[PhysicsMemory.PARAM_DT] = params.dt;
     f[PhysicsMemory.PARAM_SOFTENING] = params.softening;
     f[PhysicsMemory.PARAM_THETA] = params.theta;
-    f[PhysicsMemory.PARAM_MASS_THRESHOLD] = params.massThreshold ?? 0;
     f[PhysicsMemory.PARAM_DM_STRENGTH] = params.dmStrength ?? 0;
     f[PhysicsMemory.PARAM_DM_CORE_RADIUS] = params.dmCoreRadius ?? 0;
     f[PhysicsMemory.PARAM_BH_MASS] = params.blackHoleMass ?? 0;
@@ -122,7 +121,6 @@ describe('worker SAB protocol', () => {
             dt: 0.021,
             softening: 0.75,
             theta: 0.8,
-            massThreshold: 3,
             activeCount: 42,
             useActivePassive: true,
             dmStrength: 4,
@@ -144,13 +142,57 @@ describe('worker SAB protocol', () => {
         expect(got.dt).toBeCloseTo(0.021, 4);
         expect(got.softening).toBeCloseTo(0.75, 4);
         expect(got.theta).toBeCloseTo(0.8, 4);
-        expect(got.massThreshold).toBeCloseTo(3, 4);
         expect(got.dmStrength).toBeCloseTo(4, 4);
         expect(got.dmCoreRadius).toBeCloseTo(5, 4);
         expect(got.blackHoleMass).toBeCloseTo(6, 4);
         expect(got.blackHoleSoftening).toBeCloseTo(7, 4);
         expect(got.activeCount).toBe(42);
         expect(got.useActivePassive).toBe(true);
+    });
+
+    it('steps a split galaxy identically to main-thread Barnes-Hut', () => {
+        vi.spyOn(console, 'log').mockImplementation(() => { });
+        const sim = new SimulationManager();
+        sim.params.preset = 'galaxy';
+        sim.params.count = 1500;
+        sim.params.selfGravActiveCount = 500;
+        sim.setSeed(777);
+        sim.initGalaxy();
+        // The float slots carry params as float32, so both paths step with the rounded
+        // values the worker reads back; otherwise the comparison measures slot rounding.
+        const f32 = Math.fround;
+        const p = sim.params;
+        const params: PhysicsParams = {
+            gravity: f32(p.gravity),
+            dt: f32(p.dt),
+            softening: f32(p.softening),
+            theta: f32(p.theta),
+            activeCount: p.activeCount,
+            useActivePassive: p.useActivePassive,
+            dmStrength: f32(p.dmStrength),
+            dmCoreRadius: f32(p.dmCoreRadius),
+            blackHoleMass: f32(p.blackHoleMass),
+            blackHoleSoftening: f32(p.blackHoleSoftening),
+        };
+        expect(params.useActivePassive).toBe(true);
+        expect(params.activeCount).toBeLessThan(sim.state.n);
+
+        const reference = cloneState(sim.state);
+        const refEngine = new BarnesHutEngine(reference);
+        refEngine.step(params.dt, params);
+        refEngine.dispose();
+
+        postStep(sim.memory, params);
+        const workerEngine = new BarnesHutEngine(sim.state);
+        expect(serviceOneStep(sim.memory, workerEngine)).toBe(true);
+        workerEngine.dispose();
+
+        expect(sim.state.positionX).toEqual(reference.positionX);
+        expect(sim.state.positionY).toEqual(reference.positionY);
+        expect(sim.state.velocityX).toEqual(reference.velocityX);
+        expect(sim.state.velocityY).toEqual(reference.velocityY);
+        expect(Atomics.load(sim.memory.flags, PhysicsMemory.FLAG_STEPS_DONE)).toBe(1);
+        expect(sim.memory.floatParams[PhysicsMemory.PARAM_INTERACTIONS]).toBeGreaterThan(0);
     });
 });
 

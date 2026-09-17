@@ -47,7 +47,11 @@ export interface PhysicsParams {
     dt: number;
     /** A small offset to prevent infinite acceleration during close encounters. */
     softening: number;
-    /** The number of active bodies in the simulation. */
+    /**
+     * Number of leading field-generating bodies. With `useActivePassive` on, only
+     * indices in `[start, activeCount)` are gravitational sources (start is 1 when a
+     * pinned black hole occupies index 0, else 0); every body is a receiver.
+     */
     activeCount: number;
     /** Flag to enable active/passive logic for performance optimization. */
     useActivePassive: boolean;
@@ -57,8 +61,6 @@ export interface PhysicsParams {
     dmStrength?: number;
     /** The core radius of the dark matter halo. */
     dmCoreRadius?: number;
-    /** Minimum mass required for an object to be considered "active" (e.g., in a QuadTree). */
-    massThreshold?: number;
     /** Mass of a central supermassive black hole. */
     blackHoleMass?: number;
     /** Softening parameter specific to the central supermassive black hole. */

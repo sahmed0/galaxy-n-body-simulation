@@ -24,7 +24,7 @@
  * All ICs are seeded (mulberry32) and deterministic; the reported bands were measured
  * here and frozen with margin, so a regression that breaks conservation trips the test.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { BruteForceEngine, BarnesHutEngine, PhysicsState } from '../../src/physics';
 import type { PhysicsParams } from '../../src/physics/types';
 import {
@@ -35,6 +35,8 @@ import {
 } from '../../src/physics/energy';
 import { mulberry32 } from '../utils/rng';
 import { makeVirialCluster, staggerHalfStep } from '../utils/clusters';
+import { cloneState } from '../utils/state';
+import { SimulationManager } from '../../src/state';
 
 /** Gravitational constant for the BH-disk case, whose accelerations are computed here. */
 const G = 1.0;
@@ -251,5 +253,33 @@ describe('Engine-class energy-conservation bands', () => {
         // Energy band with the analytic BH potential included. Circular orbits keep this
         // very tight - measured ≈ 4.5e-6; frozen at 1e-4 (a real break jumps orders of magnitude).
         expect(band).toBeLessThan(1e-4);
+    });
+
+    it('Case D - galaxy split: BarnesHut keeps the active-subsystem band like BruteForce', () => {
+        vi.spyOn(console, 'log').mockImplementation(() => { });
+        const sim = new SimulationManager();
+        sim.params.preset = 'galaxy';
+        sim.params.count = 1200;
+        sim.params.selfGravActiveCount = 400;
+        sim.setSeed(0xC0FFEE);
+        sim.initGalaxy();
+        // Carries dmStrength, dmCoreRadius, blackHoleMass, blackHoleSoftening and the IC's dt.
+        const p: PhysicsParams = { ...sim.params };
+        expect(p.activeCount).toBeLessThan(sim.state.n);
+
+        const sBrute = cloneState(sim.state);
+        const sTree = cloneState(sim.state);
+        const treeEngine = new BarnesHutEngine(sTree);
+        const brute = runBand(new BruteForceEngine(sBrute), sBrute, p, 1, p.activeCount, 600, 10);
+        const tree = runBand(treeEngine, sTree, { ...p, theta: 0.7 }, 1, p.activeCount, 600, 10);
+        treeEngine.dispose();
+
+        // Measured ≈ 2.9e-6; frozen with ~3.5x margin.
+        expect(brute.band).toBeLessThan(1e-5);
+        // Measured ≈ 1.3e-5; frozen with ~4x margin.
+        expect(tree.band).toBeLessThan(5e-5);
+        // A tree that summed the passive tracers as sources measured ≈ 1.5e-2 here,
+        // so this bound fails on source selection by mass.
+        expect(tree.band).toBeLessThan(5e-3);
     });
 });

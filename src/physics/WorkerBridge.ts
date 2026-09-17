@@ -138,7 +138,6 @@ export class WorkerBridge implements SharedStateEngine {
             f[PhysicsMemory.PARAM_DT] = dt;
             f[PhysicsMemory.PARAM_SOFTENING] = params.softening;
             f[PhysicsMemory.PARAM_THETA] = params.theta;
-            f[PhysicsMemory.PARAM_MASS_THRESHOLD] = params.massThreshold || 0;
             f[PhysicsMemory.PARAM_DM_STRENGTH] = params.dmStrength || 0;
             f[PhysicsMemory.PARAM_DM_CORE_RADIUS] = params.dmCoreRadius || 0;
             f[PhysicsMemory.PARAM_BH_MASS] = params.blackHoleMass || 0;
