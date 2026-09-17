@@ -133,17 +133,18 @@ export class WorkerBridge implements SharedStateEngine {
 
         if (status === PhysicsMemory.STATUS_IDLE) {
             // Write Params to Shared Memory
-            this.memory.floatParams[1] = params.gravity;
-            this.memory.floatParams[2] = dt;
-            this.memory.floatParams[3] = params.softening;
-            this.memory.floatParams[4] = params.theta;
-            this.memory.floatParams[5] = params.massThreshold || 0;
-            this.memory.floatParams[6] = params.dmStrength || 0;
-            this.memory.floatParams[7] = params.dmCoreRadius || 0;
-            this.memory.floatParams[8] = params.blackHoleMass || 0;
-            this.memory.floatParams[9] = params.blackHoleSoftening || 0;
-            this.memory.floatParams[PhysicsMemory.PARAM_ACTIVE_COUNT] = params.activeCount;
-            this.memory.floatParams[PhysicsMemory.PARAM_USE_ACTIVE_PASSIVE] = params.useActivePassive ? 1 : 0;
+            const f = this.memory.floatParams;
+            f[PhysicsMemory.PARAM_GRAVITY] = params.gravity;
+            f[PhysicsMemory.PARAM_DT] = dt;
+            f[PhysicsMemory.PARAM_SOFTENING] = params.softening;
+            f[PhysicsMemory.PARAM_THETA] = params.theta;
+            f[PhysicsMemory.PARAM_MASS_THRESHOLD] = params.massThreshold || 0;
+            f[PhysicsMemory.PARAM_DM_STRENGTH] = params.dmStrength || 0;
+            f[PhysicsMemory.PARAM_DM_CORE_RADIUS] = params.dmCoreRadius || 0;
+            f[PhysicsMemory.PARAM_BH_MASS] = params.blackHoleMass || 0;
+            f[PhysicsMemory.PARAM_BH_SOFTENING] = params.blackHoleSoftening || 0;
+            f[PhysicsMemory.PARAM_ACTIVE_COUNT] = params.activeCount;
+            f[PhysicsMemory.PARAM_USE_ACTIVE_PASSIVE] = params.useActivePassive ? 1 : 0;
 
             // Set Status to COMPUTING and Notify
             Atomics.store(this.memory.flags, PhysicsMemory.FLAG_STATUS, PhysicsMemory.STATUS_COMPUTING);

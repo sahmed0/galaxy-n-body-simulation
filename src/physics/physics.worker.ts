@@ -62,20 +62,17 @@ export function serviceOneStep(memory: PhysicsMemory, engine: { step(dt: number,
         return false;
     }
 
-    // Read params from shared memory.
-    // Float slots: 1=Gravity, 2=dt, 3=Softening, 4=Theta, 5=MassThreshold,
-    // 6=dmStrength, 7=dmCoreRadius, 8=blackHoleMass, 9=blackHoleSoftening,
-    // 12=activeCount, 13=useActivePassive.
+    // Read params from the shared float slots (the PARAM_* constants on PhysicsMemory).
     const params: PhysicsParams = {
-        gravity: floatParams[1],
-        dt: floatParams[2],
-        softening: floatParams[3],
-        theta: floatParams[4],
-        massThreshold: floatParams[5],
-        dmStrength: floatParams[6],
-        dmCoreRadius: floatParams[7],
-        blackHoleMass: floatParams[8],
-        blackHoleSoftening: floatParams[9],
+        gravity: floatParams[PhysicsMemory.PARAM_GRAVITY],
+        dt: floatParams[PhysicsMemory.PARAM_DT],
+        softening: floatParams[PhysicsMemory.PARAM_SOFTENING],
+        theta: floatParams[PhysicsMemory.PARAM_THETA],
+        massThreshold: floatParams[PhysicsMemory.PARAM_MASS_THRESHOLD],
+        dmStrength: floatParams[PhysicsMemory.PARAM_DM_STRENGTH],
+        dmCoreRadius: floatParams[PhysicsMemory.PARAM_DM_CORE_RADIUS],
+        blackHoleMass: floatParams[PhysicsMemory.PARAM_BH_MASS],
+        blackHoleSoftening: floatParams[PhysicsMemory.PARAM_BH_SOFTENING],
         activeCount: floatParams[PhysicsMemory.PARAM_ACTIVE_COUNT],
         useActivePassive: floatParams[PhysicsMemory.PARAM_USE_ACTIVE_PASSIVE] !== 0,
     };

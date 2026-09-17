@@ -31,6 +31,15 @@ export class PhysicsMemory {
     // Worker heartbeat/timing counters (int view) and param passthrough (float view).
     static readonly FLAG_STEPS_DONE = 10;          // int: monotonic count of completed steps
     static readonly FLAG_STEP_US = 11;             // int: duration of last step, microseconds
+    static readonly PARAM_GRAVITY = 1;             // float: gravitational constant
+    static readonly PARAM_DT = 2;                  // float: step size
+    static readonly PARAM_SOFTENING = 3;           // float: pairwise softening length
+    static readonly PARAM_THETA = 4;               // float: Barnes-Hut opening angle
+    static readonly PARAM_MASS_THRESHOLD = 5;      // float: Barnes-Hut source mass threshold
+    static readonly PARAM_DM_STRENGTH = 6;         // float: dark matter halo strength
+    static readonly PARAM_DM_CORE_RADIUS = 7;      // float: dark matter halo core radius
+    static readonly PARAM_BH_MASS = 8;             // float: pinned central black hole mass
+    static readonly PARAM_BH_SOFTENING = 9;        // float: central black hole softening
     static readonly PARAM_ACTIVE_COUNT = 12;       // float: activeCount passed to the worker step
     static readonly PARAM_USE_ACTIVE_PASSIVE = 13; // float: useActivePassive flag (0/1)
     static readonly PARAM_INTERACTIONS = 14;       // float: worker's interaction count for the last step

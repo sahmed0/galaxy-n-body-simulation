@@ -59,15 +59,15 @@ function defaultParams(): PhysicsParams {
 /** Replicates WorkerBridge.step's shared-memory writes, then flips the flag to COMPUTING. */
 function postStep(memory: PhysicsMemory, params: PhysicsParams): void {
     const f = memory.floatParams;
-    f[1] = params.gravity;
-    f[2] = params.dt;
-    f[3] = params.softening;
-    f[4] = params.theta;
-    f[5] = params.massThreshold ?? 0;
-    f[6] = params.dmStrength ?? 0;
-    f[7] = params.dmCoreRadius ?? 0;
-    f[8] = params.blackHoleMass ?? 0;
-    f[9] = params.blackHoleSoftening ?? 0;
+    f[PhysicsMemory.PARAM_GRAVITY] = params.gravity;
+    f[PhysicsMemory.PARAM_DT] = params.dt;
+    f[PhysicsMemory.PARAM_SOFTENING] = params.softening;
+    f[PhysicsMemory.PARAM_THETA] = params.theta;
+    f[PhysicsMemory.PARAM_MASS_THRESHOLD] = params.massThreshold ?? 0;
+    f[PhysicsMemory.PARAM_DM_STRENGTH] = params.dmStrength ?? 0;
+    f[PhysicsMemory.PARAM_DM_CORE_RADIUS] = params.dmCoreRadius ?? 0;
+    f[PhysicsMemory.PARAM_BH_MASS] = params.blackHoleMass ?? 0;
+    f[PhysicsMemory.PARAM_BH_SOFTENING] = params.blackHoleSoftening ?? 0;
     f[PhysicsMemory.PARAM_ACTIVE_COUNT] = params.activeCount;
     f[PhysicsMemory.PARAM_USE_ACTIVE_PASSIVE] = params.useActivePassive ? 1 : 0;
     Atomics.store(memory.flags, PhysicsMemory.FLAG_STATUS, PhysicsMemory.STATUS_COMPUTING);
