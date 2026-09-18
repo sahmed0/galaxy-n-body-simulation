@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import shaderSrc from '../../src/physics/shaders.wgsl?raw';
 import { buildUniformFields } from '../../src/physics/WebGPUEngine';
-import type { PhysicsParams } from '../../src/physics/types';
+import type { PhysicsParams, RenderParams } from '../../src/physics/types';
 import { parseStruct, computeComponentLayout } from '../utils/wgsl';
 
 // Distinct representative values - the test asserts on names/offsets, not values, but a fully
@@ -21,11 +21,11 @@ import { parseStruct, computeComponentLayout } from '../utils/wgsl';
 const params: PhysicsParams = {
     gravity: 1, dt: 0.01, softening: 2, activeCount: 8, useActivePassive: true, theta: 0.7,
     dmStrength: 3, dmCoreRadius: 40, blackHoleMass: 5, blackHoleSoftening: 6,
-    cameraZoom: 1.5, cameraX: 11, cameraY: 12, cameraTilt: 0.6,
 };
+const render: RenderParams = { cameraZoom: 1.5, cameraX: 11, cameraY: 12, cameraTilt: 0.6 };
 
 describe('WGSL Params uniform layout', () => {
-    const tsFields = buildUniformFields(params, 0.01, 256, 8, 1920, 1080);
+    const tsFields = buildUniformFields(params, render, 0.01, 256, 8, 1920, 1080);
     const { components, size } = computeComponentLayout(parseStruct(shaderSrc, 'Params'));
 
     it('TS table and WGSL struct have the same number of f32 components (20)', () => {

@@ -9,8 +9,9 @@ import {
     BruteForceEngine,
     BarnesHutEngine,
     WorkerBridge,
+    DEFAULT_RENDER_PARAMS,
 } from '../physics';
-import type { AnyEngine, EngineType } from '../physics';
+import type { AnyEngine, EngineType, RenderParams } from '../physics';
 import { EnergyMonitor } from '../physics/energy';
 import { CanvasRenderer } from '../rendering';
 import { massToColor, mulberry32, randomUint32 } from '../utils';
@@ -371,16 +372,15 @@ export class SimulationManager {
         blackHoleMass: 0,
         blackHoleSoftening: SELF_GRAV_BH_SOFTENING,
         isPaused: false,
-        cameraZoom: 1.0,
-        cameraX: 0.0,
-        cameraY: 0.0,
-        cameraTilt: 0.6,
         // Tied to the default preset (galaxy) via presetDmDefault so the two
         // can't drift apart. The UI resets this to presetDmDefault(preset) on switch.
         dmStrength: presetDmDefault('galaxy'),
         dmCoreRadius: 1200.0,
         shouldShowQuadTree: false,
     };
+
+    /** Camera transform handed to a self-rendering engine, synced from the canvas camera each frame. */
+    readonly renderParams: RenderParams = { ...DEFAULT_RENDER_PARAMS };
 
     /**
      * Initializes the simulation manager, galaxy data, and renders to the canvas.
@@ -489,7 +489,7 @@ export class SimulationManager {
         try {
             await this.webGpuEngine.init(this.params.count, this.state, this.params.activeCount);
             this.registerWebGpuLossHandler();
-            this.webGpuEngine.updateUniforms(this.params.dt, this.params);
+            this.webGpuEngine.updateUniforms(this.params.dt, this.params, this.renderParams);
             console.info('WebGPU device re-created; continuing on GPU.');
         } catch (err) {
             console.error('WebGPU re-creation failed:', err);
@@ -937,7 +937,7 @@ export class SimulationManager {
 
         if (this.webGpuEngine && this.engine === this.webGpuEngine) {
             this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
-            this.webGpuEngine.updateUniforms(this.params.dt, this.params);
+            this.webGpuEngine.updateUniforms(this.params.dt, this.params, this.renderParams);
         }
 
         // Every velocity in the subsystem just changed, so the old E0 is meaningless.
@@ -1745,11 +1745,11 @@ export class SimulationManager {
         // --- Presentation: the one discriminant branch (worker painted above) ---
         if (this.engine.kind === 'self-rendering') {
             // Keep GPU camera uniforms in sync (needed while paused too).
-            this.params.cameraZoom = this.renderer.camera.zoom;
-            this.params.cameraX = this.renderer.camera.x;
-            this.params.cameraY = this.renderer.camera.y;
-            this.params.cameraTilt = this.renderer.camera.tilt;
-            this.engine.render(this.params);
+            this.renderParams.cameraZoom = this.renderer.camera.zoom;
+            this.renderParams.cameraX = this.renderer.camera.x;
+            this.renderParams.cameraY = this.renderer.camera.y;
+            this.renderParams.cameraTilt = this.renderer.camera.tilt;
+            this.engine.render(this.params, this.renderParams);
         } else if (!onWorker) {
             if (this.params.engineType === 'barnes') {
                 this.renderer.quadTree = (this.engine as BarnesHutEngine).root || null;

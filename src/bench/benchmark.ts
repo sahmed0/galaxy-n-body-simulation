@@ -207,7 +207,6 @@ export function initBench(sim: SimulationManager): void {
         const params: PhysicsParams = {
             gravity: 1, dt: 0.016, softening: 1, activeCount: n, useActivePassive: false,
             theta: 1, dmStrength: 0, dmCoreRadius: 50, blackHoleMass: 0, blackHoleSoftening: 1,
-            cameraX: 0, cameraY: 0, cameraZoom: 1, cameraTilt: 0.6,
         };
 
         gpu.kernelMode = 'naive';

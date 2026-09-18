@@ -65,15 +65,25 @@ export interface PhysicsParams {
     blackHoleMass?: number;
     /** Softening parameter specific to the central supermassive black hole. */
     blackHoleSoftening?: number;
-    /** Camera Zoom level, utilized primarily within WebGPU simulation rendering. */
-    cameraZoom?: number;
-    /** Camera X-axis offset. */
-    cameraX?: number;
-    /** Camera Y-axis offset. */
-    cameraY?: number;
-    /** Camera 3D tilt factor. */
-    cameraTilt?: number;
 }
+
+/**
+ * Presentation parameters a {@link SelfRenderingEngine} reads: the camera transform
+ * the render pass applies. Kept separate from {@link PhysicsParams} because no
+ * physics step depends on them.
+ */
+export interface RenderParams {
+    /** World units to canvas pixels scale. */
+    cameraZoom: number;
+    /** World-space camera centre. */
+    cameraX: number;
+    cameraY: number;
+    /** Vertical squash applied to world Y for the tilted view. */
+    cameraTilt: number;
+}
+
+/** Identity camera: zoom 1, centred on the origin, default tilt. */
+export const DEFAULT_RENDER_PARAMS: Readonly<RenderParams> = { cameraZoom: 1, cameraX: 0, cameraY: 0, cameraTilt: 0.6 };
 
 /**
  * The capability shared by every physics evaluation engine: it can be
@@ -146,10 +156,13 @@ export interface SharedStateEngine extends PhysicsEngine {
 export interface SelfRenderingEngine extends PhysicsEngine {
     readonly kind: 'self-rendering';
     /**
-     * Presents the engine's current state to its own surface.
-     * @param params - The parameters governing presentation (e.g. camera).
+     * Presents the engine's current state to its own surface. Takes the physics
+     * params as well as the camera because the two share one uniform block, which
+     * is refreshed on every render so camera changes apply on frames with no step.
+     * @param params - The physics parameters the last step ran with.
+     * @param render - The camera transform to present with.
      */
-    render(params: PhysicsParams): void;
+    render(params: PhysicsParams, render: RenderParams): void;
     /**
      * Shows or hides the engine's render surface.
      * @param visible - Target visibility of the surface.

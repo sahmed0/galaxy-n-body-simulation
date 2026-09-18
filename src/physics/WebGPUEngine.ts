@@ -1,7 +1,8 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
-import type { SelfRenderingEngine, PhysicsParams, InitialConditionType } from './types';
+import type { SelfRenderingEngine, PhysicsParams, RenderParams, InitialConditionType } from './types';
+import { DEFAULT_RENDER_PARAMS } from './types';
 import shaderWGSL from './shaders.wgsl?raw'; // Vite import for raw string
 
 /**
@@ -32,6 +33,7 @@ export interface UniformField {
  */
 export function buildUniformFields(
     params: PhysicsParams,
+    render: RenderParams,
     dt: number,
     count: number,
     activeCount: number,
@@ -47,10 +49,10 @@ export function buildUniformFields(
         { name: 'useActivePassive', value: params.useActivePassive ? 1.0 : 0.0 },
         { name: 'pad4', value: 0.0 },
         { name: 'dmStrength', value: params.dmStrength || 0.0 },
-        { name: 'cameraPos.x', value: params.cameraX || 0 },
-        { name: 'cameraPos.y', value: params.cameraY || 0 },
-        { name: 'cameraZoom', value: params.cameraZoom || 1 },
-        { name: 'cameraTilt', value: params.cameraTilt || 0.6 },
+        { name: 'cameraPos.x', value: render.cameraX },
+        { name: 'cameraPos.y', value: render.cameraY },
+        { name: 'cameraZoom', value: render.cameraZoom },
+        { name: 'cameraTilt', value: render.cameraTilt },
         { name: 'canvasSize.x', value: canvasWidth },
         { name: 'canvasSize.y', value: canvasHeight },
         { name: 'dmCoreRadius', value: params.dmCoreRadius || 50.0 },
@@ -436,8 +438,9 @@ export class WebGPUEngine implements SelfRenderingEngine {
      * up-to-date values. Also resizes the canvas to the window if it changed.
      * @param dt - Time step for this frame.
      * @param params - Runtime simulation parameters to upload.
+     * @param render - Camera transform to upload.
      */
-    updateUniforms(dt: number, params: PhysicsParams) {
+    updateUniforms(dt: number, params: PhysicsParams, render: RenderParams) {
         if (!this.device || !this.context) return;
 
         // Resize WebGPU Canvas if needed. Backing store is CSS size x dpr (physical pixels).
@@ -461,7 +464,7 @@ export class WebGPUEngine implements SelfRenderingEngine {
         // physical pixels uniformly (the shader multiplies both position and point size by zoom).
         // cameraPos is left unscaled: it is subtracted before the zoom multiply in the shader.
         this.lastUseActivePassive = params.useActivePassive;
-        const fields = buildUniformFields(params, dt, this.count, this.activeCount,
+        const fields = buildUniformFields(params, render, dt, this.count, this.activeCount,
             this.canvas.width, this.canvas.height);
         const zoomField = fields.find(f => f.name === 'cameraZoom');
         if (zoomField) zoomField.value *= dpr;
@@ -477,12 +480,13 @@ export class WebGPUEngine implements SelfRenderingEngine {
      * per displayed frame (frame-rate-independent physics).
      * @param dt - Delta time for this physics step.
      * @param params - Configuration parameter blocks evaluating runtime features.
+     * @param render - Camera written into the shared uniform block; the next render() overwrites it.
      */
-    step(dt: number, params: PhysicsParams) {
+    step(dt: number, params: PhysicsParams, render: RenderParams = DEFAULT_RENDER_PARAMS) {
         if (!this.device || !this.pipeline || !this.pipelineTiled) return;
         if (!this.bindGroupComputeA || !this.bindGroupComputeB) return;
 
-        this.updateUniforms(dt, params);
+        this.updateUniforms(dt, params, render);
 
         const pipeline = this.kernelMode === 'tiled' ? this.pipelineTiled : this.pipeline;
 
@@ -549,14 +553,15 @@ export class WebGPUEngine implements SelfRenderingEngine {
     /**
      * Renders the current simulation state to the canvas. Safe to call without a
      * preceding step (e.g. when paused or when no physics sub-step ran this frame).
-     * @param params - Configuration parameters (camera transform, etc.).
+     * @param params - The physics parameters the last step ran with.
+     * @param render - The camera transform to present with.
      */
-    render(params: PhysicsParams) {
+    render(params: PhysicsParams, render: RenderParams) {
         if (!this.device || !this.renderPipeline || !this.context) return;
         if (!this.bindGroupRenderA || !this.bindGroupRenderB) return;
 
         // Refresh uniforms so camera changes apply even on frames with no step.
-        this.updateUniforms(0, params);
+        this.updateUniforms(0, params, render);
 
         const commandEncoder = this.device.createCommandEncoder({ label: 'Render Command Encoder' });
 
