@@ -15,13 +15,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    presetFor,
     MIN_DT_FRACTION,
     ACCRETION_BH_MASS,
     GALAXY_CENTRAL_BH_MASS,
     DISK_INNER_RADIUS,
     GALAXY_RADIUS,
 } from './SimulationManager';
+import { presetFor } from './enginePresets';
 import { BruteForceEngine } from '../physics';
 
 // Reaches the private analytic rotation curve (TS `private` is compile-time only)

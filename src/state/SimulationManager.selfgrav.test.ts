@@ -16,12 +16,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    presetFor,
     MIN_DT_FRACTION,
     DISK_SCALE_LENGTH,
     TARGET_F_DISK,
     GALAXY_CENTRAL_BH_MASS,
 } from './SimulationManager';
+import { presetFor } from './enginePresets';
 import { BruteForceEngine, BarnesHutEngine } from '../physics';
 
 // Reaches the private rotation-curve internals (TS `private` is compile-time
