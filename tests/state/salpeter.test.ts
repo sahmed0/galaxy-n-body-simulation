@@ -3,17 +3,14 @@
  *
  * Injectable seeded RNG + Salpeter KS test.
  *
- * Verifies that {@link SimulationManager.sampleSalpeterMass} draws stellar masses
- * from the Salpeter IMF over [0.1, 50] (exponent p = 1.35). With a seeded RNG
- * injected (`mulberry32`), the sampler is deterministic, so a Kolmogorov-Smirnov
- * goodness-of-fit test against the analytic Salpeter CDF is non-flaky in CI.
- *
- * The RNG is a private instance field defaulting to Math.random; tests reach it
- * via a cast (TS `private` is compile-time only), matching the private-access
- * pattern used by the existing accretion/selfgrav preset tests.
+ * Verifies that {@link sampleSalpeterMass} draws stellar masses from the Salpeter
+ * IMF over [0.1, 50] (exponent p = 1.35). The sampler takes its generator as an
+ * argument, so handing it a seeded `mulberry32` makes it deterministic and a
+ * Kolmogorov-Smirnov goodness-of-fit test against the analytic Salpeter CDF is
+ * non-flaky in CI.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SimulationManager } from '../../src/state/SimulationManager';
+import { sampleSalpeterMass } from '../../src/state/ic/common';
 import { mulberry32 } from '../utils/rng';
 import { salpeterCDF, ksStatistic, ksCriticalValue } from '../utils/stats';
 
@@ -26,24 +23,16 @@ const SEED = 0x5a17e7;          // "salpeter"-ish
 const N = 100_000;              // large enough for a tight KS band, fast enough for CI
 const ALPHA = 0.01;             // significance level for the KS critical value
 
-// Reaches the private RNG field + private sampler (TS `private` is compile-time only).
-interface SalpeterInternals {
-    rng: () => number;
-    sampleSalpeterMass(): number;
-}
-
 beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
 });
 
-/** Builds a manager with a seeded RNG and draws `count` Salpeter masses. */
+/** Draws `count` Salpeter masses from a seeded generator. */
 function drawMasses(seed: number, count: number): number[] {
-    const sim = new SimulationManager();
-    (sim as unknown as SalpeterInternals).rng = mulberry32(seed);
-    const internals = sim as unknown as SalpeterInternals;
+    const rng = mulberry32(seed);
     const masses: number[] = new Array(count);
     for (let i = 0; i < count; i++) {
-        masses[i] = internals.sampleSalpeterMass();
+        masses[i] = sampleSalpeterMass(rng);
     }
     return masses;
 }

@@ -4,3 +4,4 @@
 export * from './SimulationManager';
 export * from './enginePresets';
 export * from './params';
+export * from './ic/common';

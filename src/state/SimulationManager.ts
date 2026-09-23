@@ -17,19 +17,16 @@ import { CanvasRenderer } from '../rendering';
 import { massToColor, mulberry32, randomUint32 } from '../utils';
 import { ENGINE_PRESETS, presetFor } from './enginePresets';
 import type { SimulationParams } from './params';
-
-/**
- * Base radius for galaxy particle distribution generation. Used by the accretion
- * preset, which seeds the disk in the annulus
- * [DISK_INNER_RADIUS, DISK_INNER_RADIUS + GALAXY_RADIUS]. The self-gravitating
- * preset instead uses an exponential profile (see {@link DISK_SCALE_LENGTH}).
- */
-export const GALAXY_RADIUS = 500;
-
-/**
- * Inner radius of the accretion-preset annulus (see {@link GALAXY_RADIUS}).
- */
-export const DISK_INNER_RADIUS = 10;
+import {
+    DISK_INNER_RADIUS,
+    GALAXY_RADIUS,
+    MIN_DT_FRACTION,
+    STEPS_PER_ORBIT,
+    gaussianRandom,
+    haloAcc,
+    presetDmDefault,
+    sampleSalpeterMass,
+} from './ic/common';
 
 /**
  * Mass of the galaxy preset's fixed central black hole (the source mass folded
@@ -52,19 +49,6 @@ export const GALAXY_CENTRAL_BH_MASS = 2600;
  * the fast inner orbits resolved.
  */
 export const ACCRETION_BH_MASS = 1.001e6;
-
-/**
- * Default dark-matter halo strength for each preset. The galaxy wants a halo
- * (a flat outer rotation curve); the accretion preset is a clean Keplerian
- * test-particle disk about a dominant SMBH, so DM is off by default. This is the
- * single source for both the initial {@link SimulationManager.params}.dmStrength
- * and the DM-only reset performed when the user switches presets in the UI.
- * @param preset - The simulation preset.
- * @returns The default dmStrength for that preset (0 for accretion, 250 for galaxy).
- */
-export function presetDmDefault(preset: 'accretion' | 'galaxy'): number {
-    return preset === 'accretion' ? 0 : 250;
-}
 
 /**
  * Exponential scale length R_d of the self-gravitating disk:
@@ -128,28 +112,12 @@ export const TOOMRE_Q = 1.3;
 export const SELF_GRAV_SOFTENING_FACTOR = 0.9;
 
 /**
- * Minimum number of leapfrog steps used to resolve the fastest (innermost) orbit
- * of the self-gravitating disk: the orbital-resolution dt limit is one orbital
- * period at the peak angular frequency divided by this. See
- * {@link SimulationManager.computeAdaptiveTimestep}.
- */
-export const STEPS_PER_ORBIT = 50;
-
-/**
  * Safety factor on the close-encounter dt limit for the heavy macro-particles:
  * dt <= ENCOUNTER_SAFETY * sqrt(eps^3 / (G * m_particle)), the timestep that
  * resolves a near-softening-length two-body encounter. See
  * {@link SimulationManager.computeAdaptiveTimestep}.
  */
 export const ENCOUNTER_SAFETY = 0.05;
-
-/**
- * Floor on the adaptive timestep, as a fraction of the engine preset dt, so a
- * pathological choice can't make the simulation crawl to a halt. Hitting this
- * floor signals the disk mass / halo are mis-scaled (but is not treated as an
- * error). See {@link SimulationManager.computeAdaptiveTimestep}.
- */
-export const MIN_DT_FRACTION = 1 / 64;
 
 /**
  * Number of *active* (field-generating) macro-particles in the self-gravitating
@@ -563,7 +531,7 @@ export class SimulationManager {
             const x = Math.cos(angle) * dist;
             const y = Math.sin(angle) * dist;
 
-            const mass = this.sampleSalpeterMass();
+            const mass = sampleSalpeterMass(this.rng);
             const [r, g, b] = massToColor(mass);
             particles.push({ x, y, mass, r, g, b, dist });
         }
@@ -680,7 +648,7 @@ export class SimulationManager {
 
             // Colour still encodes a sampled stellar (Salpeter) mass for visual
             // consistency with the accretion preset; the physical mass is equal.
-            const [r, g, b] = massToColor(this.sampleSalpeterMass());
+            const [r, g, b] = massToColor(sampleSalpeterMass(this.rng));
             this.state.colors[i * 3 + 0] = r;
             this.state.colors[i * 3 + 1] = g;
             this.state.colors[i * 3 + 2] = b;
@@ -725,7 +693,7 @@ export class SimulationManager {
         // mass, where vExt2 is the squared circular speed from the halo and the BH.
         const Rstar = DISK_FRACTION_RADIUS_FACTOR * DISK_SCALE_LENGTH;
         const M0 = this.diskMass;
-        const extAcc = this.haloAcc(Rstar) + this.bhAcc(Rstar);     // halo + fixed BH
+        const extAcc = haloAcc(Rstar, this.params) + this.bhAcc(Rstar);     // halo + fixed BH
         const diskAcc = this.aRadInterp(Rstar) - extAcc;            // disk-only inward accel
         const vDisk2_perMass = (diskAcc * Rstar) / M0;              // ∝, mass-independent
         const vExt2 = extAcc * Rstar;
@@ -768,21 +736,6 @@ export class SimulationManager {
         this.applySelfGravHalfKick();
 
         this.removeNetMomentum();
-    }
-
-    /**
-     * Draws a stellar mass from a Salpeter IMF over [0.1, 50] (exponent 1.35).
-     * Used for particle colours in both presets and for the physical (test-
-     * particle) masses in the accretion preset.
-     */
-    private sampleSalpeterMass(): number {
-        const mMin = 0.1;
-        const mMax = 50.0;
-        const p = 1.35;
-        const u = this.rng();
-        const minP = Math.pow(mMin, -p);
-        const maxP = Math.pow(mMax, -p);
-        return Math.pow(u * (maxP - minP) + minP, -1 / p);
     }
 
     /**
@@ -863,7 +816,7 @@ export class SimulationManager {
             // the engine's aDM_base and aSMBH, so this matches the engine's terms.
             const r = Math.hypot(pix, piy);
             if (r > 0) {
-                const aExt = this.haloAcc(r) + this.bhAcc(r);
+                const aExt = haloAcc(r, this.params) + this.bhAcc(r);
                 ax -= (pix / r) * aExt;
                 ay -= (piy / r) * aExt;
             }
@@ -1078,17 +1031,6 @@ export class SimulationManager {
     }
 
     /**
-     * Inward radial acceleration from the dark-matter halo (isothermal-cored)
-     * at radius `r`: a_DM = dmStrength^2 * r / (r^2 + r_core^2). Shared by the
-     * accretion preset's analytic rotation curve and the self-gravitating preset's
-     * measured rotation curve.
-     */
-    private haloAcc(r: number): number {
-        const s = this.params.dmStrength;
-        return (s * s * r) / (r * r + this.params.dmCoreRadius * this.params.dmCoreRadius);
-    }
-
-    /**
      * Total inward radial acceleration on an accretion-preset test particle at
      * radius `r` from the central SMBH plus the dark-matter halo. (The
      * self-gravitating preset uses a *measured* rotation curve instead; see
@@ -1097,7 +1039,7 @@ export class SimulationManager {
     private radialAcc(r: number): number {
         const softenedDistSq = r * r + this.params.softening * this.params.softening;
         const coreAcc = (this.params.gravity * ACCRETION_BH_MASS) / softenedDistSq;
-        return coreAcc + this.haloAcc(r);
+        return coreAcc + haloAcc(r, this.params);
     }
 
     /**
@@ -1248,7 +1190,7 @@ export class SimulationManager {
                 aRadSum += -(axTot * cos[a] + ayTot * sin[a]);
             }
             // Disk pairwise field + dark-matter halo + fixed central BH.
-            acc[k] = aRadSum / Naz + this.haloAcc(rk) + this.bhAcc(rk);
+            acc[k] = aRadSum / Naz + haloAcc(rk, this.params) + this.bhAcc(rk);
         }
 
         // Light boxcar smoothing (half-width 1 bin) to suppress residual Poisson
@@ -1302,7 +1244,7 @@ export class SimulationManager {
      */
     diskFractionAt(r: number): number {
         const total = this.aRadInterp(r) * r;
-        const disk = (this.aRadInterp(r) - this.haloAcc(r) - this.bhAcc(r)) * r;
+        const disk = (this.aRadInterp(r) - haloAcc(r, this.params) - this.bhAcc(r)) * r;
         return disk / Math.max(total, 1e-30);
     }
 
@@ -1404,8 +1346,8 @@ export class SimulationManager {
             // for the calibrated disk and only tames the r -> 0 limit, where
             // v_circ -> 0 but Sigma stays finite (otherwise that lone central
             // particle would get an ejecting kick).
-            const dvR = this.gaussianRandom() * Math.min(sigmaR, vCirc);
-            const dvPhi = this.gaussianRandom() * Math.min(sigmaPhi, vCirc);
+            const dvR = gaussianRandom(this.rng) * Math.min(sigmaR, vCirc);
+            const dvPhi = gaussianRandom(this.rng) * Math.min(sigmaPhi, vCirc);
 
             vx = tx * vBarPhi + ux * dvR + tx * dvPhi;
             vy = ty * vBarPhi + uy * dvR + ty * dvPhi;
@@ -1433,17 +1375,6 @@ export class SimulationManager {
             this.state.velocityX[i] = vx + ax * (this.params.dt / 2);
             this.state.velocityY[i] = vy + ay * (this.params.dt / 2);
         }
-    }
-
-    /**
-     * Standard normal random sample (mean 0, variance 1) via Box-Muller.
-     */
-    private gaussianRandom(): number {
-        let u = 0;
-        let v = 0;
-        while (u === 0) u = this.rng();
-        while (v === 0) v = this.rng();
-        return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     }
 
     /**

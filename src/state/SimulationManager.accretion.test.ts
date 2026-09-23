@@ -15,12 +15,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    MIN_DT_FRACTION,
     ACCRETION_BH_MASS,
     GALAXY_CENTRAL_BH_MASS,
-    DISK_INNER_RADIUS,
-    GALAXY_RADIUS,
 } from './SimulationManager';
+import { MIN_DT_FRACTION, DISK_INNER_RADIUS, GALAXY_RADIUS } from './ic/common';
 import { presetFor } from './enginePresets';
 import { BruteForceEngine } from '../physics';
 

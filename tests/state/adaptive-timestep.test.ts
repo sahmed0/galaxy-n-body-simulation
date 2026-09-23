@@ -21,12 +21,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    STEPS_PER_ORBIT,
-    MIN_DT_FRACTION,
     ENCOUNTER_SAFETY,
-    DISK_INNER_RADIUS,
-    GALAXY_RADIUS,
 } from '../../src/state/SimulationManager';
+import { STEPS_PER_ORBIT, MIN_DT_FRACTION, DISK_INNER_RADIUS, GALAXY_RADIUS } from '../../src/state/ic/common';
 import { ENGINE_PRESETS } from '../../src/state/enginePresets';
 
 // Seed for the realization under test. initGalaxy() samples the disk through the

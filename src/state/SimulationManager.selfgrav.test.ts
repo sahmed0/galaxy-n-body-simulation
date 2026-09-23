@@ -16,11 +16,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
     SimulationManager,
-    MIN_DT_FRACTION,
     DISK_SCALE_LENGTH,
     TARGET_F_DISK,
     GALAXY_CENTRAL_BH_MASS,
 } from './SimulationManager';
+import { MIN_DT_FRACTION } from './ic/common';
 import { presetFor } from './enginePresets';
 import { BruteForceEngine, BarnesHutEngine } from '../physics';
 
