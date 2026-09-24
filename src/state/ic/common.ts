@@ -1,6 +1,7 @@
 /**
  * Copyright (c) 2026 Sajid Ahmed
  */
+import type { PhysicsState } from '../../physics';
 import type { PresetName, SimulationParams } from '../params';
 
 /**
@@ -42,6 +43,49 @@ export const MIN_DT_FRACTION = 1 / 64;
  */
 export function presetDmDefault(preset: PresetName): number {
     return preset === 'accretion' ? 0 : 250;
+}
+
+/**
+ * The mutable simulation surface an initial-conditions object writes into. The
+ * manager replaces `state` on every re-initialisation, so the context is built
+ * fresh per call rather than cached on the IC object.
+ */
+export interface IcContext {
+    state: PhysicsState;
+    params: SimulationParams;
+    rng: () => number;
+}
+
+/**
+ * How a preset builds and maintains its disk. One implementation per preset; the
+ * manager holds exactly one instance and delegates every initial-condition
+ * question to it.
+ */
+export interface InitialConditions {
+    /** Which preset this object realises. */
+    readonly preset: PresetName;
+    /**
+     * Effective total disk mass of the current realization. Non-zero only in the
+     * self-gravitating preset, where it adds the disk's own contribution to the
+     * circular velocity and sets the Toomre-Q velocity dispersion.
+     */
+    readonly diskMass: number;
+    /**
+     * Writes positions, velocities, masses and colours into `ctx.state`, and sets
+     * `params.activeCount`, `params.useActivePassive`, `params.blackHoleMass`,
+     * `params.blackHoleSoftening`, `params.softening` and `params.dt` for the preset.
+     */
+    initialise(ctx: IcContext): void;
+    /**
+     * Re-derives every disk velocity from the current positions. Used by the
+     * gravity slider and engine switches, which change the field or dt without
+     * resampling the disk.
+     */
+    resetVelocities(ctx: IcContext): void;
+    /** Safe timestep for the preset: a pure read of this object's tables and `params`. */
+    adaptiveTimestep(params: SimulationParams): number;
+    /** Gravitational softening for the preset: a pure read of this object's tables and `params`. */
+    effectiveSoftening(params: SimulationParams): number;
 }
 
 /**

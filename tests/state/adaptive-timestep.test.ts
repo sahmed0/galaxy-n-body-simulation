@@ -12,19 +12,17 @@
  *      ENCOUNTER_SAFETY * sqrt(eps^3 / (G * m_particle)).
  *   ...then max'd against presetDt * MIN_DT_FRACTION (the floor).
  *
- * These tests mirror the function's own math (reaching the private rotation-curve /
- * analytic-field internals via a cast, as the accretion/selfgrav tests do) and
- * assert the three behavioural claims: orbits are resolved to >= STEPS_PER_ORBIT,
+ * These tests mirror the function's own math - reading the galaxy disk's public
+ * probes, and the accretion field through a cast, as the accretion test does -
+ * and assert the three behavioural claims: orbits are resolved to >= STEPS_PER_ORBIT,
  * the floor is honoured, and the close-encounter term becomes the binding limit
  * when the macro-particles are heavy.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-    SimulationManager,
-    ENCOUNTER_SAFETY,
-} from '../../src/state/SimulationManager';
-import { STEPS_PER_ORBIT, MIN_DT_FRACTION, DISK_INNER_RADIUS, GALAXY_RADIUS } from '../../src/state/ic/common';
+import { SimulationManager } from '../../src/state/SimulationManager';
 import { ENGINE_PRESETS } from '../../src/state/enginePresets';
+import { STEPS_PER_ORBIT, MIN_DT_FRACTION, DISK_INNER_RADIUS, GALAXY_RADIUS } from '../../src/state/ic/common';
+import { ENCOUNTER_SAFETY } from '../../src/state/ic/GalaxyDisk';
 
 // Seed for the realization under test. initGalaxy() samples the disk through the
 // manager's RNG, so without a fixed seed the realized disk (and hence the measured
@@ -33,17 +31,10 @@ import { ENGINE_PRESETS } from '../../src/state/enginePresets';
 // close-encounter assertion holds.
 const SEED = 0x71e57e9;
 
-// Reaches the private analytic field + measured rotation-curve internals
-// (TS `private` is compile-time only) so the tests can deterministically mirror
-// the dt limits.
+// Reaches the private analytic accretion field (TS `private` is compile-time
+// only) so the tests can deterministically mirror the accretion dt limit.
 interface AdaptiveInternals {
     radialAcc(r: number): number;
-    rotCurveAcc: Float64Array;
-    rotCurveRMin: number;
-    rotCurveRMax: number;
-    vCircAt(r: number): number;
-    effectiveSoftening(): number;
-    selfGravActiveCount(): number;
 }
 
 beforeEach(() => {
@@ -83,13 +74,14 @@ function accretionOmegaMax(sim: SimulationManager): number {
 
 /** Peak angular frequency over the measured galaxy rotation curve. */
 function galaxyOmegaMax(sim: SimulationManager): number {
-    const s = sim as unknown as AdaptiveInternals;
-    const Nr = s.rotCurveAcc.length;
+    const disk = sim.galaxyDisk;
+    const curve = disk.rotationCurve!;
+    const Nr = curve.acc.length;
     let omegaMax = 0;
     for (let k = 0; k < Nr; k++) {
-        const rk = s.rotCurveRMin + ((s.rotCurveRMax - s.rotCurveRMin) * k) / (Nr - 1);
+        const rk = curve.rMin + ((curve.rMax - curve.rMin) * k) / (Nr - 1);
         if (rk <= 0) continue;
-        const omega = s.vCircAt(rk) / rk;
+        const omega = disk.vCircAt(rk) / rk;
         if (omega > omegaMax) omegaMax = omega;
     }
     return omegaMax;
@@ -97,9 +89,9 @@ function galaxyOmegaMax(sim: SimulationManager): number {
 
 /** Mirrors the galaxy close-encounter limit: ENCOUNTER_SAFETY*sqrt(eps^3/(G*m)). */
 function galaxyEncounterLimit(sim: SimulationManager): number {
-    const s = sim as unknown as AdaptiveInternals;
-    const eps = s.effectiveSoftening();
-    const mParticle = sim.diskMass / s.selfGravActiveCount();
+    const disk = sim.galaxyDisk;
+    const eps = disk.effectiveSoftening(sim.params);
+    const mParticle = sim.diskMass / disk.activeCount(sim.params);
     return ENCOUNTER_SAFETY * Math.sqrt((eps * eps * eps) / (sim.params.gravity * mParticle));
 }
 

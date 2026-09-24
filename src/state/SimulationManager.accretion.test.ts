@@ -13,13 +13,10 @@
  *
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-    SimulationManager,
-    ACCRETION_BH_MASS,
-    GALAXY_CENTRAL_BH_MASS,
-} from './SimulationManager';
-import { MIN_DT_FRACTION, DISK_INNER_RADIUS, GALAXY_RADIUS } from './ic/common';
+import { SimulationManager, ACCRETION_BH_MASS } from './SimulationManager';
 import { presetFor } from './enginePresets';
+import { MIN_DT_FRACTION, DISK_INNER_RADIUS, GALAXY_RADIUS } from './ic/common';
+import { GALAXY_CENTRAL_BH_MASS } from './ic/GalaxyDisk';
 import { BruteForceEngine } from '../physics';
 
 // Reaches the private analytic rotation curve (TS `private` is compile-time only)

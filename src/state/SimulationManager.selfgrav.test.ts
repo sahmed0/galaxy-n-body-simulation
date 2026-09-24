@@ -14,25 +14,11 @@
  * driven directly.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-    SimulationManager,
-    DISK_SCALE_LENGTH,
-    TARGET_F_DISK,
-    GALAXY_CENTRAL_BH_MASS,
-} from './SimulationManager';
-import { MIN_DT_FRACTION } from './ic/common';
+import { SimulationManager } from './SimulationManager';
 import { presetFor } from './enginePresets';
+import { MIN_DT_FRACTION } from './ic/common';
+import { DISK_SCALE_LENGTH, TARGET_F_DISK, GALAXY_CENTRAL_BH_MASS } from './ic/GalaxyDisk';
 import { BruteForceEngine, BarnesHutEngine } from '../physics';
-
-// Reaches the private rotation-curve internals (TS `private` is compile-time
-// only) so the tests can sample the measured curve and derived frequencies.
-interface SelfGravInternals {
-    rotCurveAcc: Float64Array;
-    rotCurveRMin: number;
-    rotCurveRMax: number;
-    vCircAt(r: number): number;
-    kappaAt(r: number): number;
-}
 
 beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
@@ -196,15 +182,15 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         expect(sim.params.dt).toBeGreaterThanOrEqual(presetDt * MIN_DT_FRACTION);
 
         // The fastest orbit (peak angular frequency over the measured rotation
-        // curve) must be resolved by at least ~30 leapfrog steps. Reach through
-        // the runtime for the private curve (TS `private` is compile-time only).
-        const s = sim as unknown as SelfGravInternals;
-        const acc: Float64Array = s.rotCurveAcc;
+        // curve) must be resolved by at least ~30 leapfrog steps.
+        const disk = sim.galaxyDisk;
+        const curve = disk.rotationCurve!;
+        const acc = curve.acc;
         let omegaMax = 0;
         for (let k = 0; k < acc.length; k++) {
-            const rk = s.rotCurveRMin + ((s.rotCurveRMax - s.rotCurveRMin) * k) / (acc.length - 1);
+            const rk = curve.rMin + ((curve.rMax - curve.rMin) * k) / (acc.length - 1);
             if (rk <= 0) continue;
-            const omega = s.vCircAt(rk) / rk;
+            const omega = disk.vCircAt(rk) / rk;
             if (omega > omegaMax) omegaMax = omega;
         }
         const stepsPerOrbit = (2 * Math.PI / omegaMax) / sim.params.dt;
@@ -215,20 +201,19 @@ describe('SimulationManager - self-gravitating initial conditions', () => {
         const sim = makeSim('galaxy');
         sim.initGalaxy();
 
-        // Reach through the runtime for the private kappaAt (TS `private` is
-        // compile-time only) and sample it on a fine radius grid, finer than the
-        // rotation-curve table spacing so a per-cell staircase would show up as
-        // large cell-to-cell jumps. Start at 0.5 R_d: inside that the fixed central
-        // BH (softening ~25) makes kappa genuinely Keplerian-steep, so the cell-to-
-        // cell change there is physical, not a staircase artifact.
-        const s = sim as unknown as SelfGravInternals;
+        // Sample kappa on a fine radius grid, finer than the rotation-curve table
+        // spacing so a per-cell staircase would show up as large cell-to-cell
+        // jumps. Start at 0.5 R_d: inside that the fixed central BH (softening ~25)
+        // makes kappa genuinely Keplerian-steep, so the cell-to-cell change there
+        // is physical, not a staircase artifact.
+        const disk = sim.galaxyDisk;
         const rLo = 0.5 * DISK_SCALE_LENGTH;
         const rHi = 3 * DISK_SCALE_LENGTH;
         const N = 200;
         const kappa: number[] = [];
         for (let i = 0; i < N; i++) {
             const r = rLo + ((rHi - rLo) * i) / (N - 1);
-            const k = s.kappaAt(r);
+            const k = disk.kappaAt(r);
             expect(Number.isFinite(k)).toBe(true);
             expect(k).toBeGreaterThan(0);
             kappa.push(k);
