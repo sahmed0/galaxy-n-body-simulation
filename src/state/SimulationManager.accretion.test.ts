@@ -13,17 +13,12 @@
  *
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SimulationManager, ACCRETION_BH_MASS } from './SimulationManager';
+import { SimulationManager } from './SimulationManager';
 import { presetFor } from './enginePresets';
 import { MIN_DT_FRACTION, DISK_INNER_RADIUS, GALAXY_RADIUS } from './ic/common';
+import { ACCRETION_BH_MASS } from './ic/AccretionDisk';
 import { GALAXY_CENTRAL_BH_MASS } from './ic/GalaxyDisk';
 import { BruteForceEngine } from '../physics';
-
-// Reaches the private analytic rotation curve (TS `private` is compile-time only)
-// so the tests can sample v_c(r) about the central SMBH directly.
-interface AccretionInternals {
-    radialAcc(r: number): number;
-}
 
 beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
@@ -61,7 +56,7 @@ function rmsRadius(sim: SimulationManager): number {
  * from the analytic accretion field. Mirrors computeAdaptiveTimestep's grid.
  */
 function maxOmega(sim: SimulationManager): number {
-    const s = sim as unknown as AccretionInternals;
+    const disk = sim.accretionDisk;
     const rMin = DISK_INNER_RADIUS;
     const rMax = DISK_INNER_RADIUS + GALAXY_RADIUS;
     const N = 128;
@@ -69,7 +64,7 @@ function maxOmega(sim: SimulationManager): number {
     for (let k = 0; k < N; k++) {
         const r = rMin + ((rMax - rMin) * k) / (N - 1);
         if (r <= 0) continue;
-        const vCirc = Math.sqrt(Math.max(s.radialAcc(r) * r, 0));
+        const vCirc = Math.sqrt(Math.max(disk.radialAcc(r, sim.params) * r, 0));
         omegaMax = Math.max(omegaMax, vCirc / r);
     }
     return omegaMax;
@@ -144,9 +139,9 @@ describe('SimulationManager - accretion central SMBH', () => {
         // radialAcc is the centripetal acceleration a = v_c^2 / r, so v_c^2 = a*r
         // and the Keplerian invariant v_c^2 * r = a * r^2 = G*M is constant.
         // (Softening 1.0 << r makes the deviation ~(eps/r)^2, negligible.)
-        const s = sim as unknown as AccretionInternals;
+        const disk = sim.accretionDisk;
         const radii = [60, 150, 300, 500];
-        const gm = radii.map((r) => s.radialAcc(r) * r * r);
+        const gm = radii.map((r) => disk.radialAcc(r, sim.params) * r * r);
         const mean = gm.reduce((a, b) => a + b, 0) / gm.length;
         for (const v of gm) {
             // For pure Kepler this is G*M = constant; 3% is comfortable headroom.
@@ -160,9 +155,9 @@ describe('SimulationManager - accretion central SMBH', () => {
         sim.initGalaxy();
 
         // Resolve ~1.5 inner orbits: T_in = 2*pi*r_in / v_c(r_in).
-        const s = sim as unknown as AccretionInternals;
+        const disk = sim.accretionDisk;
         const rIn = DISK_INNER_RADIUS;
-        const vIn = Math.sqrt(s.radialAcc(rIn) * rIn);
+        const vIn = Math.sqrt(disk.radialAcc(rIn, sim.params) * rIn);
         const Tin = (2 * Math.PI * rIn) / vIn;
         const steps = Math.ceil((1.5 * Tin) / sim.params.dt);
 

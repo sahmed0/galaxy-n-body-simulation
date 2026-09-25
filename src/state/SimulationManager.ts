@@ -14,35 +14,12 @@ import {
 import type { AnyEngine, EngineType, RenderParams } from '../physics';
 import { EnergyMonitor } from '../physics/energy';
 import { CanvasRenderer } from '../rendering';
-import { massToColor, mulberry32, randomUint32 } from '../utils';
+import { mulberry32, randomUint32 } from '../utils';
 import { ENGINE_PRESETS, presetFor } from './enginePresets';
 import type { SimulationParams } from './params';
-import {
-    DISK_INNER_RADIUS,
-    GALAXY_RADIUS,
-    MIN_DT_FRACTION,
-    STEPS_PER_ORBIT,
-    haloAcc,
-    presetDmDefault,
-    sampleSalpeterMass,
-    type IcContext,
-} from './ic/common';
+import { presetDmDefault, type IcContext, type InitialConditions } from './ic/common';
 import { GalaxyDisk, SELF_GRAV_ACTIVE_COUNT, SELF_GRAV_BH_SOFTENING } from './ic/GalaxyDisk';
-
-/**
- * Mass of the accretion preset's central SMBH (the live particle at index 0 and
- * the source of {@link SimulationManager.radialAcc}'s analytic Keplerian field).
- *
- * Over the test-particle annulus R in [DISK_INNER_RADIUS, DISK_INNER_RADIUS +
- * GALAXY_RADIUS] = [10, 510] at gravity = 1, this gives inner circular speed
- * v_c(10) = sqrt(1e6/10) ~ 316 and outer v_c(510) ~ 44 - clearly Keplerian
- * (v_c proportional to 1/sqrt(r)), with dramatic inner shear, and dwarfing the
- * total mass of the thousands of Salpeter test particles (0.1-50 each) so they
- * behave as a collisionless disk orbiting a dominant point mass. The adaptive
- * timestep ({@link SimulationManager.computeAdaptiveTimestep}) shrinks dt to keep
- * the fast inner orbits resolved.
- */
-export const ACCRETION_BH_MASS = 1.001e6;
+import { AccretionDisk } from './ic/AccretionDisk';
 
 /**
  * Manages the state, memory, and lifecycle of the N-Body physics simulation.
@@ -88,12 +65,18 @@ export class SimulationManager {
     frames = 0;
     lastTelemetryUpdate = 0;
 
-    /** Initial conditions of the current realization: a GalaxyDisk, or null on the accretion preset. */
-    ic: GalaxyDisk | null = null;
+    /** How the current realization's disk was built, one object per preset. */
+    ic!: InitialConditions;
 
     /** The galaxy initial conditions; throws on the accretion preset. */
     get galaxyDisk(): GalaxyDisk {
-        if (!this.ic) throw new Error('galaxyDisk: preset is not galaxy');
+        if (!(this.ic instanceof GalaxyDisk)) throw new Error('galaxyDisk: preset is not galaxy');
+        return this.ic;
+    }
+
+    /** The accretion initial conditions; throws on the galaxy preset. */
+    get accretionDisk(): AccretionDisk {
+        if (!(this.ic instanceof AccretionDisk)) throw new Error('accretionDisk: preset is not accretion');
         return this.ic;
     }
 
@@ -103,7 +86,7 @@ export class SimulationManager {
      * the circular velocity and to compute the Toomre-Q velocity dispersion.
      */
     get diskMass(): number {
-        return this.ic?.diskMass ?? 0;
+        return this.ic.diskMass;
     }
 
     /**
@@ -352,18 +335,8 @@ export class SimulationManager {
         this.workerBridge?.dispose();
         this.workerBridge = null;
 
-        if (this.params.preset === 'galaxy') {
-            this.ic = new GalaxyDisk();
-            this.ic.initialise(this.icContext());
-        } else {
-            this.ic = null;
-            // The accretion preset uses a live SMBH particle at index 0, so the
-            // engines' analytic BH term stays off, and the engine preset softening
-            // is already the right scale for a central-mass-dominated disk.
-            this.params.blackHoleMass = 0;
-            this.params.softening = presetFor(this.params.engineType).softening;
-            this.initAccretionDisk();
-        }
+        this.ic = this.params.preset === 'galaxy' ? new GalaxyDisk() : new AccretionDisk();
+        this.ic.initialise(this.icContext());
 
         // Fresh initial conditions: the simulated clock restarts and the old E0 describes
         // a system that no longer exists. Covers init(), restart(), and preset changes.
@@ -380,67 +353,6 @@ export class SimulationManager {
     }
 
     /**
-     * Accretion preset: a central SMBH (index 0) surrounded by a thin annulus of
-     * Salpeter-sampled test particles. The disk is light, so it behaves as test
-     * particles orbiting the SMBH + halo and relaxes into concentric rings.
-     */
-    private initAccretionDisk() {
-        this.state.positionX[0] = 0;
-        this.state.positionY[0] = 0;
-        this.state.velocityX[0] = 0;
-        this.state.velocityY[0] = 0;
-        this.state.mass[0] = ACCRETION_BH_MASS;
-        // Warm glow for the dominant central SMBH (instead of an invisible black point).
-        this.state.colors[0] = 1;
-        this.state.colors[1] = 1;
-        this.state.colors[2] = 0.85;
-
-        const particles: { x: number; y: number; mass: number; r: number; g: number; b: number; dist: number }[] = [];
-
-        for (let i = 1; i < this.params.count; i++) {
-            const angle = this.rng() * Math.PI * 2;
-            const dist = DISK_INNER_RADIUS + this.rng() * GALAXY_RADIUS;
-            const x = Math.cos(angle) * dist;
-            const y = Math.sin(angle) * dist;
-
-            const mass = sampleSalpeterMass(this.rng);
-            const [r, g, b] = massToColor(mass);
-            particles.push({ x, y, mass, r, g, b, dist });
-        }
-
-        particles.sort((a, b) => b.mass - a.mass);
-
-        // Derive a safe dt for the analytic orbital field BEFORE the velocity loop:
-        // computeStarVelocity's leapfrog half-step reads params.dt.
-        this.params.dt = this.computeAdaptiveTimestep();
-
-        let tempActiveCount = 0;
-
-        for (let i = 1; i < this.params.count; i++) {
-            const p = particles[i - 1];
-
-            this.state.positionX[i] = p.x;
-            this.state.positionY[i] = p.y;
-            this.state.mass[i] = p.mass;
-
-            this.state.colors[i * 3 + 0] = p.r;
-            this.state.colors[i * 3 + 1] = p.g;
-            this.state.colors[i * 3 + 2] = p.b;
-
-            if (p.mass >= this.params.massThreshold) {
-                tempActiveCount++;
-            }
-
-            this.computeStarVelocity(i, p.dist);
-        }
-
-        // The active set is the index range [0, activeCount). Particle 0 is the
-        // central SMBH, so it occupies one slot; add 1 to the count of qualifying
-        // heavy stars (indices 1..tempActiveCount) so none are demoted to passive.
-        this.params.activeCount = tempActiveCount + 1;
-    }
-
-    /**
      * Resets particle velocities to (near-)circular orbits based on current positions.
      * Also re-applies the leapfrog half-step offset (a*dt/2) using the *current* dt,
      * so this MUST be called after any runtime change to params.dt to keep the
@@ -448,11 +360,7 @@ export class SimulationManager {
      */
     softResetVelocities() {
         if (!this.state) return;
-        if (this.ic) {
-            this.ic.resetVelocities(this.icContext());
-        } else {
-            this.accretionResetVelocities();
-        }
+        this.ic.resetVelocities(this.icContext());
 
         if (this.webGpuEngine && this.engine === this.webGpuEngine) {
             this.webGpuEngine.setParticles(this.params.count, this.state, this.params.activeCount);
@@ -467,8 +375,7 @@ export class SimulationManager {
 
     /** Softening to use given the current preset and engine. */
     private effectiveSoftening(): number {
-        if (this.ic) return this.ic.effectiveSoftening(this.params);
-        return presetFor(this.params.engineType).softening;
+        return this.ic.effectiveSoftening(this.params);
     }
 
     /**
@@ -479,51 +386,7 @@ export class SimulationManager {
      * preset dt stays fixed.
      */
     computeAdaptiveTimestep(): number {
-        if (this.ic) return this.ic.adaptiveTimestep(this.params);
-        return this.accretionAdaptiveTimestep();
-    }
-
-    /**
-     * Timestep for the accretion preset: test particles in a static SMBH + halo
-     * potential, so only the orbital-resolution limit applies, computed
-     * analytically from {@link radialAcc} over the disk annulus. No
-     * close-encounter term - the test particles are massless to the field and
-     * exert no two-body kicks - and floored at {@link MIN_DT_FRACTION} of the
-     * engine preset dt so a mis-scaling can't stall the sim.
-     */
-    private accretionAdaptiveTimestep(): number {
-        const presetDt = presetFor(this.params.engineType).timeStep;
-        // Resolve the fastest orbit about the central SMBH + halo. Sample
-        // Omega(r) = vCirc(r)/r analytically over the annulus
-        // [DISK_INNER_RADIUS, DISK_INNER_RADIUS + GALAXY_RADIUS]. For a central
-        // mass Omega is monotone-decreasing (peak at the inner edge); the grid is
-        // just robustness against the halo term.
-        const rMin = DISK_INNER_RADIUS;
-        const rMax = DISK_INNER_RADIUS + GALAXY_RADIUS;
-        const N = 128;
-        let omegaMax = 0;
-        for (let k = 0; k < N; k++) {
-            const r = rMin + ((rMax - rMin) * k) / (N - 1);
-            if (r <= 0) continue;
-            const vCirc = Math.sqrt(Math.max(this.radialAcc(r) * r, 0));
-            omegaMax = Math.max(omegaMax, vCirc / r);
-        }
-        let dt = presetDt; // limit 1: never faster than the preset.
-        if (omegaMax > 0) dt = Math.min(dt, (2 * Math.PI / omegaMax) / STEPS_PER_ORBIT);
-        // Floor so a pathological choice can't crawl the sim to a halt.
-        return Math.max(dt, presetDt * MIN_DT_FRACTION);
-    }
-
-    /**
-     * Total inward radial acceleration on an accretion-preset test particle at
-     * radius `r` from the central SMBH plus the dark-matter halo. (The
-     * self-gravitating preset uses a *measured* rotation curve instead; see
-     * {@link GalaxyDisk}.)
-     */
-    private radialAcc(r: number): number {
-        const softenedDistSq = r * r + this.params.softening * this.params.softening;
-        const coreAcc = (this.params.gravity * ACCRETION_BH_MASS) / softenedDistSq;
-        return coreAcc + haloAcc(r, this.params);
+        return this.ic.adaptiveTimestep(this.params);
     }
 
     /**
@@ -533,52 +396,6 @@ export class SimulationManager {
      */
     diskFractionAt(r: number): number {
         return this.galaxyDisk.diskFractionAt(r, this.params);
-    }
-
-    /**
-     * Sets the staggered (leapfrog half-step) velocity for accretion-preset star
-     * `i` at radius `dist`: a near-circular orbit about the central SMBH + halo
-     * with a little scatter.
-     */
-    private computeStarVelocity(i: number, dist: number) {
-        const px = this.state.positionX[i];
-        const py = this.state.positionY[i];
-        const r = Math.max(dist, 1e-3);
-
-        // Radial (outward) and tangential (counter-clockwise) unit vectors.
-        const ux = px / r;
-        const uy = py / r;
-        const tx = -uy;
-        const ty = ux;
-
-        const aTot = this.radialAcc(r);
-        const vCirc = Math.sqrt(Math.max(aTot * r, 0));
-        const velocity = vCirc * (0.9 + this.rng() * 0.2);
-        const vx = tx * velocity;
-        const vy = ty * velocity;
-
-        // Leapfrog half-step offset using the (inward) radial acceleration, so
-        // velocity stays staggered half a step ahead of position. The analytic
-        // radialAcc already is this test particle's true force, so no O(N^2)
-        // pass is needed.
-        const ax = -ux * aTot;
-        const ay = -uy * aTot;
-        this.state.velocityX[i] = vx + ax * (this.params.dt / 2);
-        this.state.velocityY[i] = vy + ay * (this.params.dt / 2);
-    }
-
-    /**
-     * Re-derives every accretion-preset test-particle velocity from its current
-     * radius. Index 0 is the live SMBH and keeps its own velocity; a particle
-     * sitting exactly at the origin has no orbital plane, so it is left alone.
-     */
-    private accretionResetVelocities() {
-        for (let i = 1; i < this.params.count; i++) {
-            const distSq = this.state.positionX[i] * this.state.positionX[i] + this.state.positionY[i] * this.state.positionY[i];
-            const dist = Math.sqrt(distSq);
-            if (dist === 0) continue;
-            this.computeStarVelocity(i, dist);
-        }
     }
 
     /**

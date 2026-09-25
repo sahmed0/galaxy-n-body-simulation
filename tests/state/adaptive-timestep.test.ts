@@ -12,8 +12,7 @@
  *      ENCOUNTER_SAFETY * sqrt(eps^3 / (G * m_particle)).
  *   ...then max'd against presetDt * MIN_DT_FRACTION (the floor).
  *
- * These tests mirror the function's own math - reading the galaxy disk's public
- * probes, and the accretion field through a cast, as the accretion test does -
+ * These tests mirror the function's own math - reading each disk's public probes -
  * and assert the three behavioural claims: orbits are resolved to >= STEPS_PER_ORBIT,
  * the floor is honoured, and the close-encounter term becomes the binding limit
  * when the macro-particles are heavy.
@@ -30,12 +29,6 @@ import { ENCOUNTER_SAFETY } from '../../src/state/ic/GalaxyDisk';
 // non-deterministic. Pinning it stabilises every derived quantity, so the tight
 // close-encounter assertion holds.
 const SEED = 0x71e57e9;
-
-// Reaches the private analytic accretion field (TS `private` is compile-time
-// only) so the tests can deterministically mirror the accretion dt limit.
-interface AdaptiveInternals {
-    radialAcc(r: number): number;
-}
 
 beforeEach(() => {
     vi.spyOn(console, 'log').mockImplementation(() => { });
@@ -58,7 +51,7 @@ function presetDtOf(sim: SimulationManager): number {
 
 /** Peak angular frequency over the accretion annulus (mirrors the function grid). */
 function accretionOmegaMax(sim: SimulationManager): number {
-    const s = sim as unknown as AdaptiveInternals;
+    const disk = sim.accretionDisk;
     const rMin = DISK_INNER_RADIUS;
     const rMax = DISK_INNER_RADIUS + GALAXY_RADIUS;
     const N = 128;
@@ -66,7 +59,7 @@ function accretionOmegaMax(sim: SimulationManager): number {
     for (let k = 0; k < N; k++) {
         const r = rMin + ((rMax - rMin) * k) / (N - 1);
         if (r <= 0) continue;
-        const vCirc = Math.sqrt(Math.max(s.radialAcc(r) * r, 0));
+        const vCirc = Math.sqrt(Math.max(disk.radialAcc(r, sim.params) * r, 0));
         omegaMax = Math.max(omegaMax, vCirc / r);
     }
     return omegaMax;
