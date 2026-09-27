@@ -77,11 +77,23 @@ export class WebGPUEngine implements SelfRenderingEngine {
     private pipelineTiled: GPUComputePipeline | null = null;   // workgroup-tiled sim_update_tiled
     private renderPipeline: GPURenderPipeline | null = null;
 
+    private kernelModeValue: 'tiled' | 'naive' = 'tiled';
+
     /**
      * Which compute kernel step() dispatches. The tiled kernel stages sources in
      * workgroup memory and is the default; 'naive' is kept for the bench parity check.
+     * Switching kernels forgets the pass timing, because a reading taken under one
+     * kernel says nothing about the other.
      */
-    public kernelMode: 'tiled' | 'naive' = 'tiled';
+    get kernelMode(): 'tiled' | 'naive' {
+        return this.kernelModeValue;
+    }
+
+    set kernelMode(mode: 'tiled' | 'naive') {
+        if (mode === this.kernelModeValue) return;
+        this.kernelModeValue = mode;
+        this.resetPassTiming();
+    }
 
     // Buffers
     private bufferParams: GPUBuffer | null = null;
@@ -344,6 +356,7 @@ export class WebGPUEngine implements SelfRenderingEngine {
         if (!this.device) return;
         this.count = n;
         this.activeCount = activeCount;
+        this.resetPassTiming();
 
         const dataPosVel = new Float32Array(n * 4);
         const dataProps = new Float32Array(n * 4);
@@ -488,7 +501,7 @@ export class WebGPUEngine implements SelfRenderingEngine {
 
         this.updateUniforms(dt, params, render);
 
-        const pipeline = this.kernelMode === 'tiled' ? this.pipelineTiled : this.pipeline;
+        const pipeline = this.kernelModeValue === 'tiled' ? this.pipelineTiled : this.pipeline;
 
         // Throttle timestamp read-back: at most one sample every TIMESTAMP_INTERVAL_MS,
         // and never while a previous map is still pending. On other frames we run a plain
@@ -589,6 +602,21 @@ export class WebGPUEngine implements SelfRenderingEngine {
         renderPass.end();
 
         this.device.queue.submit([commandEncoder.finish()]);
+    }
+
+    /**
+     * Forgets every pass-time reading so the next sample reflects the current kernel
+     * and particle set. The benchmark calls this after a kernel or count change, so a
+     * cold pipeline or the previous configuration cannot leak into a row. An in-flight
+     * `mapAsync` is left alone: it still completes, and its result becomes the first
+     * fresh reading.
+     */
+    resetPassTiming(): void {
+        this.lastGpuPassMs = 0;
+        this.lastDispatchTimeMs = 0;
+        this.lastGpuPassSource = 'approx';
+        // Below any clock reading, so the throttle lets the next step() sample at once.
+        this.lastTimestampReadMs = -Infinity;
     }
 
     /**

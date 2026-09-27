@@ -23,6 +23,8 @@ interface BenchResult {
     stepsPerSecond: number;
     frameMs: number;
     gpuPassMs: number | null;
+    /** True when any averaged GPU sample came from the wall-clock fallback rather than a timestamp query. */
+    gpuApprox: boolean;
 }
 
 const WARMUP_MS = 2000;
@@ -112,12 +114,22 @@ export function initBench(sim: SimulationManager): void {
         parityBtn.disabled = busy;
     };
 
-    /** Runs the sim for `ms`, averaging steps/s (+ GPU pass ms) and measuring frame ms. */
-    function measure(ms: number, isGpu: boolean): Promise<{ steps: number; frameMs: number; gpu: number | null }> {
+    /**
+     * Runs the sim for `ms`, averaging steps/s (+ GPU pass ms) and measuring frame ms.
+     * The engine reports its most recent pass time rather than a queue of them, so a
+     * reading is averaged only when it is non-zero (the engine has a fresh measurement)
+     * and differs from the one already pushed (the read-back has produced a new value
+     * since the last tick). Without that filter a slow config would average the same
+     * reading several times and a config whose first read-back has not landed yet would
+     * average a zero or a value left over from the previous configuration.
+     */
+    function measure(ms: number, isGpu: boolean): Promise<{ steps: number; frameMs: number; gpu: number | null; approx: boolean }> {
         return new Promise((resolve) => {
             let frames = 0;
             const stepSamples: number[] = [];
             const gpuSamples: number[] = [];
+            let lastPushed: number | null = null;
+            let sawApprox = false;
             const start = performance.now();
             let lastSample = start;
             const tick = () => {
@@ -125,7 +137,14 @@ export function initBench(sim: SimulationManager): void {
                 const now = performance.now();
                 if (now - lastSample >= 250) {
                     stepSamples.push(sim.stepsPerSecond);
-                    if (isGpu && sim.webGpuEngine) gpuSamples.push(sim.webGpuEngine.getLastGpuPassMs().ms);
+                    if (isGpu && sim.webGpuEngine) {
+                        const { ms: passMs, source } = sim.webGpuEngine.getLastGpuPassMs();
+                        if (passMs > 0 && passMs !== lastPushed) {
+                            gpuSamples.push(passMs);
+                            lastPushed = passMs;
+                            if (source === 'approx') sawApprox = true;
+                        }
+                    }
                     lastSample = now;
                 }
                 if (now - start >= ms) {
@@ -134,6 +153,7 @@ export function initBench(sim: SimulationManager): void {
                         steps: mean(stepSamples),
                         frameMs: fps > 0 ? 1000 / fps : 0,
                         gpu: isGpu ? mean(gpuSamples) : null,
+                        approx: sawApprox,
                     });
                     return;
                 }
@@ -167,13 +187,24 @@ export function initBench(sim: SimulationManager): void {
                 progressEl.textContent = 'WebGPU unavailable - skipping GPU configs.';
                 continue;
             }
-            if (cfg.engine === 'webgpu' && sim.webGpuEngine && cfg.kernel !== '-') {
-                sim.webGpuEngine.kernelMode = cfg.kernel;
+            if (cfg.engine === 'webgpu' && sim.webGpuEngine) {
+                if (cfg.kernel !== '-') sim.webGpuEngine.kernelMode = cfg.kernel;
+                // The setter resets timing only when the kernel actually changes, and the
+                // warm-up below runs a cold pipeline; both make the readings held by the
+                // engine right now belong to the previous row.
+                sim.webGpuEngine.resetPassTiming();
             }
 
+            // Warm-up is a plain sleep, so nothing it produces reaches the averages.
             await sleep(WARMUP_MS);
             const m = await measure(MEASURE_MS, cfg.engine === 'webgpu');
-            results.push({ config: cfg, stepsPerSecond: m.steps, frameMs: m.frameMs, gpuPassMs: m.gpu });
+            results.push({
+                config: cfg,
+                stepsPerSecond: m.steps,
+                frameMs: m.frameMs,
+                gpuPassMs: m.gpu,
+                gpuApprox: m.approx,
+            });
         }
 
         outputEl.value = renderMarkdown(results);
@@ -272,7 +303,9 @@ function buildParityICs(n: number): PhysicsState {
 function renderMarkdown(results: BenchResult[]): string {
     const header = `<!-- ${navigator.userAgent} - ${new Date().toISOString()} -->`;
     const rows = results.map((r) => {
-        const gpu = r.gpuPassMs === null ? '-' : r.gpuPassMs.toFixed(3);
+        const gpu = r.gpuPassMs === null
+            ? '-'
+            : `${r.gpuPassMs.toFixed(3)}${r.gpuApprox ? ' (approx)' : ''}`;
         return `| ${r.config.engine} | ${r.config.kernel} | ${r.config.n} | ` +
             `${r.stepsPerSecond.toFixed(1)} | ${r.frameMs.toFixed(2)} | ${gpu} |`;
     });
