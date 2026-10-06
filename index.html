@@ -196,10 +196,10 @@
       $$ \xi(M) = \xi_0 M^{-2.35} $$
       <p>
         This power-law distribution means low-mass stars are exponentially
-        more common than massive stars. In the simulation, this continuous
-        mass spectrum is dynamically sorted to differentiate between heavy
-        "active" stars (which exert gravity) and light "passive" stars (which
-        only receive gravity).
+        more common than massive stars. In the accretion preset the sampled
+        masses are sorted so the heaviest stars fill the active set that exerts
+        gravity; in the galaxy preset the Salpeter draw sets only the star's
+        colour, and every disk particle carries the same dynamical mass.
       </p>
 
       <h3>Stellar Color & The H-R Diagram</h3>
@@ -212,9 +212,9 @@
         More massive stars burn hotter and brighter, shifting their emission
         spectra towards the blue end, while less massive stars are cooler and
         emit primarily in the red spectrum. The simulation visually
-        distinguishes stars by rendering the most massive active bodies with
+        distinguishes stars by rendering the most massive stars with
         intense blue-white hues, grading down to yellow, orange, and deep red
-        for the numerous lightweight passive stars.
+        for the numerous lightweight stars.
       </p>
 
       <h3>Simulation Presets</h3>
@@ -309,21 +309,21 @@
         Even with Barnes-Hut, rendering a visually dense N-body system of
         tens of thousands of stars (up to 200,000 on the GPU engine) on CPU
         threads is challenging. To solve this, we
-        introduce an Active/Passive heuristic, splitting the system into two
-        mass-distinct sets:
+        introduce an Active/Passive heuristic, splitting the bodies into two
+        index ranges chosen by the preset:
       </p>
       <ul>
         <li>
-          <strong>Active Set ($M_{heavy}$):</strong> The top percentage of
-          most massive stars. These stars are inserted into the QuadTree and
-          exert gravity on all other stars.
+          <strong>Active set:</strong> the first <code>activeCount</code>
+          bodies. Only these are inserted into the QuadTree (or summed on the
+          GPU) and exert gravity. The accretion preset fills this range with
+          the most massive stars; the galaxy preset with a random subsample of
+          the disk that carries its full mass.
         </li>
         <li>
-          <strong>Passive Set ($M_{light}$):</strong> The vast majority of
-          low-mass stars. These stars possess negligible mass compared to the
-          system's massive bodies. They do <em>not</em> exert gravity and are
-          <em>not</em> inserted into the QuadTree, but they do receive
-          gravitational pull from the active set.
+          <strong>Passive set:</strong> every body after the active range. They
+          exert no gravity and are not tree sources, but they feel the active
+          set, the halo and the black hole exactly as active bodies do.
         </li>
       </ul>
       <p>

@@ -132,7 +132,7 @@ describe('SimulationManager - accretion central SMBH', () => {
         const sim = makeSim('accretion');
         // Isolate the central mass: with no halo, radialAcc(r)*r = G*M is constant
         // for a pure point mass (softening 1.0 << r makes the deviation negligible).
-        // Force DM=0 explicitly - the P4 per-preset default is not in yet.
+        // Force DM=0 explicitly; the per-preset default does not cover this case.
         sim.params.dmStrength = 0;
         sim.initGalaxy();
 

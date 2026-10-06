@@ -1,18 +1,29 @@
 # Galaxy N-Body Simulation
 
-**A real-time TypeScript N-body simulation with four interchangeable physics engines - direct-sum, Barnes-Hut, an off-thread `SharedArrayBuffer` worker, and a WebGPU compute pipeline - built on an analytically verified physics core.**
+**A galaxy simulator that runs live in your browser. It moves up to 200,000 stars under each other's gravity, and an automated test suite checks its physics against textbook results.**
 
-
-<p align="center">
-  <img src="public/hero.gif" alt="Galaxy GIF" width="600">
-</p>
+<table align="center"><tr>
+  <td align="center"><img src="public/hero-galaxy.png" alt="Spiral galaxy preset" width="400"><br><sub>Galaxy: spiral arms that form from the stars' own gravity</sub></td>
+  <td align="center"><img src="public/hero-accretion.png" alt="Accretion disk preset" width="400"><br><sub>Accretion disk: stars orbiting a supermassive black hole</sub></td>
+</tr></table>
 
 [![Test](https://github.com/sahmed0/galaxy-n-body-simulation/actions/workflows/test.yml/badge.svg)](https://github.com/sahmed0/galaxy-n-body-simulation/actions/workflows/test.yml)
-![Vite](https://img.shields.io/badge/Vite-8.0.16-purple.svg)
-![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-blue.svg)
 ![Engine](https://img.shields.io/badge/Engine-WebGPU-crimson.svg)
 
-**[Live Demo](https://galaxy.sajidahmed.co.uk/)** • **[Seeded permalink example](https://galaxy.sajidahmed.co.uk/sim.html#s=12345&n=10000&e=webgpu&p=galaxy&g=1&dm=250)** - that link reproduces the same galaxy on every load.
+**[Live Demo](https://galaxy.sajidahmed.co.uk/)** • **[Example share link](https://galaxy.sajidahmed.co.uk/#s=12345&n=10000&e=webgpu&p=galaxy&g=1&dm=250)** (opens the same galaxy every time)
+
+## What is this?
+
+An **N-body simulation** works out how a group of objects move when each one pulls on all the others through gravity. It's the standard tool astronomers use to study how galaxies form and change.
+
+What makes it hard is the amount of computation. Every star pulls on every other star, so 10,000 stars means about 100 million pair calculations for a single step forward in time, and a smooth animation needs dozens of steps per second. This project makes that work in an ordinary web browser by offering four "engines" that solve the same problem in different ways, from a simple exact method up to one that runs on the graphics card.
+
+**At a glance**
+
+- **Fast:** 200,000 stars at 60 frames per second on a laptop's built-in graphics chip.
+- **Checked against real physics:** 22 automated test files compare the simulation with known exact answers, such as an orbit that must return to its starting point. They run on every code change, and the site only deploys if they pass.
+- **Reproducible:** every simulation starts from a random seed, so a shared link rebuilds exactly the same galaxy.
+- **Measured claims:** a built-in benchmark records the speed numbers below, and a live panel shows how well the simulation conserves energy.
 
 ## Table of Contents
 
@@ -26,110 +37,122 @@
 - [Reproducibility](#reproducibility)
 - [Getting Started](#getting-started)
 - [Usage](#usage)
-- [License](#license)
+- [Licence](#licence)
 
 ## Simulation Presets
 
-- **Galaxy (spiral)** - a massive, self-gravitating exponential disk tuned to the Toomre _Q_ stability criterion, embedded in a dark-matter halo, that develops transient spiral arms.
-- **Accretion Disk (SMBH)** - a dominant central black hole surrounded by a collisionless Keplerian test-particle disk (the ballistic limit; no viscous inspiral), with an adaptive timestep to resolve the deep central well and dark matter off by default.
+- **Galaxy (spiral).** A flat, spinning disk of stars inside an invisible dark-matter halo. The stars' own gravity holds the disk together, and spiral arms keep forming, fading and re-forming. The disk is set up to be only just stable: stable enough not to collapse into clumps, loose enough to grow spiral arms. Astronomers measure this balance with the *Toomre Q* number, which is set to 1.3 here.
+- **Accretion disk.** A supermassive black hole at the centre with a disk of lighter stars orbiting it, like planets around the Sun. The black hole dominates, so the stars follow clean elliptical orbits (Keplerian orbits). Gas friction is not modelled, so nothing spirals inwards. The timestep shrinks automatically near the black hole, where orbits are fastest. Dark matter is off by default.
 
 ## Features
 
 ### Four physics engines
 
-Selectable at runtime. Each has a body-count ceiling set by what it can actually sustain; the UI clamps to it and tells you why.
+All four calculate the same gravity and can be switched while the simulation is running. Each one has a star limit based on what it can sustain smoothly, and the interface tells you when you hit it.
 
-| Engine | Algorithm | Where it runs | Max N |
+| Engine | How it works | Where it runs | Max stars |
 | :--- | :--- | :--- | ---: |
-| **Brute Force** | $O(N^2)$ direct sum | Main thread | 20 000 |
-| **Barnes-Hut** | $O(N \log N)$ quadtree | Main thread | 50 000 |
-| **Worker** | $O(N \log N)$ quadtree | Dedicated Web Worker, over a `SharedArrayBuffer` | 50 000 |
-| **WebGPU** | $O(N^2)$, workgroup-tiled | GPU compute shader | 200 000 |
+| **Brute Force** | Exact: every star against every other star, $O(N^2)$ | Main thread | 20 000 |
+| **Barnes-Hut** | Approximate: groups distant stars together, $O(N \log N)$ | Main thread | 50 000 |
+| **Worker** | Barnes-Hut on a background thread, so the page stays responsive | Web Worker, sharing memory with the page | 50 000 |
+| **WebGPU** | Exact, with thousands of stars calculated in parallel | Graphics card (GPU) | 200 000 |
 
-WebGPU is the default and falls back to Barnes-Hut - with a banner, not a crash - when no device is available or the device is lost. The Worker engine requires cross-origin isolation and falls back the same way without it.
+WebGPU is the default. If the browser has no usable GPU, or the GPU stops responding mid-run, the simulation switches to Barnes-Hut. The Worker engine needs a page setting called cross-origin isolation and falls back the same way without it.
 
 ### Physics
 
-- **Symplectic leapfrog integration** - kick-drift, with velocities staggered half a step ahead of positions. Any runtime change to `dt` or `G` re-establishes the stagger rather than silently corrupting it.
-- **Self-gravitating galaxy initial conditions** - the disk's rotation curve is *measured* from the realized particle field rather than assumed, then given Toomre-_Q_ velocity warming (with a Plummer-softening Hankel correction) and the resulting asymmetric drift.
-- **Adaptive timestep** - the minimum of the preset `dt`, an orbital-resolution limit, and a close-encounter limit, floored so it can never stall.
-- **Isothermal dark matter halo** - an analytic potential reproducing flat rotation curves without simulating halo particles.
-- **Salpeter IMF & H-R colours** - stellar masses drawn from the Salpeter initial mass function; colours track the main sequence of the Hertzsprung-Russell diagram.
-- **Active/Passive subsetting** - heavy stars exert gravity; the lightweight majority receive it without contributing, buying visual density without quadratic cost.
+- **Leapfrog integration.** This is how the simulation steps forward in time. Unlike simpler methods, it keeps the total energy stable over thousands of orbits instead of letting it creep up or down. Positions and velocities are updated half a step apart, which gives it that stability.
+- **A galaxy that starts in balance.** Each star's starting speed is calculated from the gravity the actual generated stars produce, not from an idealised formula. Starting speeds are then randomised just enough to hit the Toomre Q target. The result is a disk that holds its shape from the first frame instead of collapsing or flying apart.
+- **Adaptive timestep.** The step size shrinks when stars orbit fast or pass close to each other, so fast motion isn't skipped over. A minimum size stops the simulation from grinding to a halt.
+- **Dark matter halo.** It's modelled as a smooth background pull rather than millions of extra particles. This is enough to give the galaxy its flat rotation curve, meaning outer stars orbit about as fast as inner ones, as in real galaxies.
+- **Realistic star masses and colours.** Star masses follow the Salpeter distribution (many small stars, a few heavy ones), and colours follow the main sequence of the Hertzsprung-Russell diagram (heavy stars blue-white, light stars orange-red).
+- **Active and passive stars.** To improve performance, only a subset of stars (the *active* ones) produce gravity, but every star feels it. The active set is always "the first `activeCount` stars", and every engine applies that same rule, so all four simulate exactly the same system. In the accretion preset the active stars are the heaviest ones. In the galaxy preset they are a random sample that carries the disk's full mass.
 
-### Diagnostics & reproducibility
+### Diagnostics
 
-- **Live energy-conservation panel** - plots $\Delta E/E_0$ for the active subsystem, computed exactly (full KE + pairwise PE + analytic external potentials) in float64, chunked across frames from a snapshot so no frame pays for the whole $O(N^2)$ sum. Hidden on the GPU engine, where particle state never leaves the device.
-- **Seeded permalinks** - the Share button copies a URL encoding the seed and parameters; opening it reproduces the same initial conditions.
-- **In-app benchmark harness** - `sim.html?bench=1` sweeps every engine and count and emits a copyable markdown table.
-- **Honest telemetry** - pair-interactions/second from exact per-engine counts, with GPU pass time from `timestamp-query` where the hardware supports it.
+- **Live energy panel.** In a correct simulation total energy should stay almost constant, so its drift is the best single sign of accuracy. The panel plots that drift ($\Delta E/E_0$) for the active stars. The exact energy calculation is expensive, so it's spread over several frames to avoid stutter. The panel is hidden on the WebGPU engine, because the star data never leaves the GPU there.
+- **Share links.** The Share button copies a link that rebuilds the same starting galaxy. See [Reproducibility](#reproducibility).
+- **Built-in benchmark.** Add `?bench` to the URL to time every engine at every star count and get a ready-made results table.
+- **Accurate speed readout.** The top bar shows pair calculations per second, counted exactly for each engine so engines can be compared fairly. The GPU time comes from the GPU's own timer where the hardware supports it.
 
 ## Verification & Testing
 
-The physics core is checked against closed-form solutions and conservation laws, not eyeballed. **20 test files - 19 [Vitest](https://vitest.dev/) suites and one [Playwright](https://playwright.dev/) browser suite** - both run in CI on every push, and the deploy is gated on them passing.
+The physics is checked against exact mathematical answers and conservation laws instead of being judged by eye. There are 22 test files: 21 [Vitest](https://vitest.dev/) suites and one [Playwright](https://playwright.dev/) suite that runs the app in a real browser. Both run on every push, and the site only deploys if they pass.
 
 ```bash
 pnpm test      # unit + analytic suites (vitest)
 pnpm e2e       # real-browser smoke suite (playwright, chromium)
 ```
 
-### What each suite proves
+**In short, the tests show that:**
 
-| Suite | What it proves |
+- orbits, forces and energy behave the way the textbook says they should
+- all four engines compute the same gravity from the same stars
+- the same seed always produces the same galaxy, byte for byte
+- every engine actually draws to the screen in a real browser
+
+### What each suite checks
+
+| Suite | What it checks |
 | :--- | :--- |
-| `tests/physics/integrator.test.ts` | A two-body orbit closes on itself after one period; leapfrog holds a **bounded** energy band where forward Euler drifts secularly - on the *identical* force law, isolating the integrator as the variable. |
-| `tests/physics/conservation.test.ts` | Total linear momentum is conserved and the centre of mass tracks $x(0) + (P/M)t$ to float64 roundoff over 4 000 steps - catching any self-acceleration or asymmetric kick. |
-| `tests/physics/field-terms.test.ts` | All three force kernels match their closed forms: softened point mass, isothermal halo (including flat-rotation-curve asymptotics), and Plummer-softened pairwise gravity reducing to Newton for $r \gg \varepsilon$ while staying finite at coincidence. |
-| `tests/physics/barnes-hut.test.ts` | The tree's *only* deviation from the exact sum is the $\theta$ multipole approximation: it degenerates to brute force at $\theta = 0$, and RMS force error shrinks monotonically as $\theta$ does. |
-| `tests/physics/quadtree.test.ts` | Mass is conserved under tree aggregation and every node carries the exact mass-weighted centre-of-mass recurrence, including the coincident-particle cutoff. |
-| `tests/physics/engine-energy.test.ts` | Whole production engines, stepping a real float32 state for 5 000 steps, keep total energy in a bounded band rather than drifting - symplecticity at the engine level, not just the kernel. The pinned black hole never moves. |
-| `tests/physics/energy-monitor.test.ts` | The live $\Delta E/E_0$ readout is exact: its resumable chunked sum equals a direct double loop at *any* chunk budget, and its baseline lifecycle never publishes a stale sample. |
-| `tests/physics/worker-protocol.test.ts` | The `SharedArrayBuffer` handshake never double-counts a step, and simulated time advances only by steps the worker actually completed. |
-| `tests/state/salpeter.test.ts` | The mass sampler genuinely draws from the Salpeter IMF - a Kolmogorov-Smirnov test against the analytic CDF, made non-flaky by a seeded generator. |
-| `tests/state/determinism.test.ts` | One seed yields exactly one realization, byte-for-byte, across managers and both presets - the guarantee a shared permalink rests on. |
-| `tests/state/adaptive-timestep.test.ts` | `dt` always resolves the fastest orbit in the system and can never collapse below its floor. |
-| `tests/gpu/uniform-layout.test.ts` | Parses `shaders.wgsl` statically and proves the TypeScript uniform write order is byte-identical to the WGSL struct - the failure mode that otherwise corrupts GPU state silently. |
-| `src/state/SimulationManager.*.test.ts` | The galaxy IC is in genuine centrifugal balance with the engine's real forces (it stays bound under both CPU engines); the accretion disk is a true Keplerian field; the WebGPU fallback and device-loss recovery state machine behaves. |
-| `e2e/smoke.spec.ts` | The seams no unit test reaches: every CPU engine - including the worker - actually **paints** in a real browser, the energy readout goes live, WebGPU falls back gracefully, and a permalink reproduces identical initial conditions across two separate page loads. |
+| `tests/physics/integrator.test.ts` | A two-body orbit returns to its starting point after one period. Leapfrog keeps energy within a fixed band, while the simpler Euler method drifts steadily away. Both use the identical force law, so the difference comes only from the integrator. |
+| `tests/physics/conservation.test.ts` | Total momentum is conserved, and the centre of mass moves in a straight line to float64 precision over 4 000 steps. Any star pushing itself, or a lopsided force, would show up here. |
+| `tests/physics/field-terms.test.ts` | All three force formulas (black hole, dark matter halo, star-to-star) match their exact equations, including flat rotation curves far out and finite force when two stars overlap. |
+| `tests/physics/barnes-hut.test.ts` | Barnes-Hut's only error comes from its grouping approximation. With grouping switched off ($\theta = 0$) it matches brute force exactly, and its error shrinks steadily as $\theta$ decreases. |
+| `tests/physics/quadtree.test.ts` | The tree used by Barnes-Hut keeps total mass correct, and every node's centre of mass is exact, even when stars overlap. |
+| `tests/physics/engine-energy.test.ts` | The real engines, running for 5 000 steps, keep total energy within a fixed band. The pinned black hole never moves. |
+| `tests/physics/energy-monitor.test.ts` | The live energy panel's frame-by-frame calculation gives exactly the same answer as a direct calculation, however it's split up, and it never shows an out-of-date value. |
+| `tests/physics/worker-protocol.test.ts` | The background worker never counts a step twice, and the simulation clock only advances for steps that actually finished. |
+| `tests/physics/engine-parity.test.ts` | Every engine uses the same stars as gravity sources: one step of brute force and of Barnes-Hut (at $\theta = 0$) both match a direct calculation, for an active and a passive star. |
+| `tests/state/ic-fixture.test.ts` | The starting galaxy for fixed seeds is frozen byte for byte, so a code change can't silently alter what a share link shows. |
+| `tests/state/salpeter.test.ts` | Star masses really do follow the Salpeter distribution (a Kolmogorov-Smirnov statistical test). A fixed seed keeps the test from failing randomly. |
+| `tests/state/determinism.test.ts` | One seed always produces exactly one galaxy, byte for byte, for both presets. Share links depend on this. |
+| `tests/state/adaptive-timestep.test.ts` | The timestep is always small enough for the fastest orbit and never drops below its minimum. |
+| `tests/gpu/uniform-layout.test.ts` | Reads the GPU shader source and confirms the TypeScript code writes settings to the GPU in exactly the layout the shader expects. A mismatch here would corrupt the simulation with no error. |
+| `src/state/SimulationManager.*.test.ts` | The starting galaxy is genuinely in balance under the engines' real forces and stays together. The accretion disk orbits are truly Keplerian. Switching to a fallback engine, and recovering when the GPU is lost, both work. |
+| `e2e/smoke.spec.ts` | Things unit tests can't reach: every CPU engine (including the worker) actually draws in a real browser, the energy panel goes live, WebGPU falls back cleanly, and a share link gives the same galaxy across two separate page loads. |
 
-Numeric tolerances are measured first and then frozen with margin, with the measured value recorded in a comment beside each. They are deliberately not tight bounds: the point is to catch a regression of physical significance, not to fail on the last bit.
+**Tolerances.** Each numeric limit was measured first and then set with some margin, and the measured value is recorded in a comment beside it. The goal is to catch physically meaningful errors, not tiny rounding differences.
+
+**Coverage.** Line coverage is 64.7% overall, and it's uneven on purpose. The physics core (`kernels`, `energy`, `BarnesHutEngine`, `BruteForceEngine`, `QuadTree`) is at 98-100%. The GPU engine, worker bridge, renderers and energy panel are near zero in Vitest because they need a real GPU, thread or canvas. The Playwright suite tests those in a real browser instead.
 
 ## Benchmarks
 
-Performance numbers are measured, not estimated. The app ships its own harness: open **`sim.html?bench=1`**, click *Run benchmark*, and it sweeps every engine and body count, then emits a copyable markdown table.
+All numbers are measured by the app's own benchmark. Open **`/?bench`** and click *Run benchmark*. It times every engine at every star count and produces the table below.
 
-**Methodology.** Galaxy preset, one fixed seed across all configurations (so engines at the same N face identical initial conditions), 2 s warm-up discarded, then a 5 s measurement window. GPU pass time comes from WebGPU `timestamp-query` where the adapter supports it, falling back to an `onSubmittedWorkDone` wall-clock reading marked `(approx)`. The same overlay runs a naive-vs-tiled kernel parity check to confirm the two GPU kernels agree numerically.
+**How it's measured.** The galaxy preset with one fixed seed, so every engine faces the same starting stars. A 2-second warm-up is discarded, then performance is measured over 5 seconds. GPU time comes from WebGPU's `timestamp-query` timer where available. Otherwise a rougher wall-clock reading is used and marked `(approx)`.
 
-**Hardware:** Intel Core i5 12500H / Intel Iris Xe / Chrome 150 / Windows 11
+**Hardware:** Intel Core i5 12500H / Intel Iris Xe / Chrome 154 / Windows 11
 
 | engine | kernel | N | steps/s | frame ms | GPU pass ms |
 |---|---|---|---|---|---|
-| brute | - | 5000 | 16.3 | 306.68 | - |
-| brute | - | 10000 | 9.4 | 532.97 | - |
-| brute | - | 20000 | 5.0 | 1005.97 | - |
-| barnes | - | 10000 | 40.9 | 121.53 | - |
-| barnes | - | 20000 | 17.8 | 280.32 | - |
-| barnes | - | 50000 | 6.4 | 773.99 | - |
-| worker | - | 10000 | 25.9 | 16.62 | - |
-| worker | - | 20000 | 11.8 | 16.66 | - |
-| worker | - | 50000 | 4.8 | 16.63 | - |
-| webgpu | naive | 10000 | 62.6 | 16.67 | 7.185 |
-| webgpu | naive | 50000 | 62.4 | 16.65 | 10.141 |
-| webgpu | naive | 100000 | 62.6 | 16.62 | 15.260 |
-| webgpu | naive | 200000 | 62.6 | 16.61 | 28.836 |
-| webgpu | tiled | 10000 | 62.6 | 16.61 | 21.196 |
-| webgpu | tiled | 50000 | 62.5 | 16.64 | 6.816 |
-| webgpu | tiled | 100000 | 62.6 | 16.72 | 9.651 |
-| webgpu | tiled | 200000 | 62.6 | 16.66 | 15.856 |
+| brute | - | 5000 | 16.5 | 302.22 | - |
+| brute | - | 10000 | 9.3 | 537.50 | - |
+| brute | - | 20000 | 5.0 | 1004.78 | - |
+| barnes | - | 10000 | 50.1 | 99.94 | - |
+| barnes | - | 20000 | 25.9 | 192.80 | - |
+| barnes | - | 50000 | 10.0 | 500.86 | - |
+| worker | - | 10000 | 30.0 | 16.61 | - |
+| worker | - | 20000 | 20.0 | 16.63 | - |
+| worker | - | 50000 | 9.9 | 16.65 | - |
+| webgpu | naive | 10000 | 62.5 | 16.64 | 8.014 |
+| webgpu | naive | 50000 | 62.4 | 16.65 | 9.587 |
+| webgpu | naive | 100000 | 62.4 | 16.65 | 14.930 |
+| webgpu | naive | 200000 | 62.6 | 16.62 | 28.049 |
+| webgpu | tiled | 10000 | 62.4 | 16.66 | 8.569 |
+| webgpu | tiled | 50000 | 62.4 | 16.64 | 9.750 |
+| webgpu | tiled | 100000 | 62.4 | 16.64 | 10.395 |
+| webgpu | tiled | 200000 | 62.7 | 16.61 | 15.860 |
 
-**WebGPU Tiled vs Naive Kernel Parity Check** (N=4096): RMS Δpos = 0.000e+0 - PASS (< 1e-3)
+**Reading the table.** The worker and WebGPU rows are capped at the screen's 60 Hz refresh rate, which is why their frame times sit at about 16.6 ms. The WebGPU engine takes one step per frame, so its steps/s is capped too. For WebGPU, compare the **GPU pass** column instead: at 200,000 stars, the tiled kernel takes 15.9 ms against 28.0 ms for the naive one.
+
+**Tiled vs naive check** (N=4096): RMS Δpos = 0.000e+0 - PASS (< 1e-3). The faster tiled GPU kernel gives the same results as the simple one.
 
 ## Architecture
 
 ```text
 ~/n-body/
-├── index.html              # Landing page (educational content, KaTeX)
-├── sim.html                # Simulation view
+├── index.html              # The single page: canvas, top bar, sidebar, About content (KaTeX)
 ├── vite.config.ts          # Build + COOP/COEP headers for dev & preview
 ├── vitest.config.ts
 ├── playwright.config.ts
@@ -137,8 +160,8 @@ Performance numbers are measured, not estimated. The app ships its own harness: 
 │   └── smoke.spec.ts       # Real-browser smoke suite
 ├── tests/                  # Analytic & conservation suites (physics/, state/, gpu/, utils/)
 └── src/
-    ├── landing.ts          # Landing-page logic
-    ├── simulation.ts       # Bootstrapper: permalink parsing, canvas, ?bench loading
+    ├── main.ts             # Bootstrapper: permalink parsing, canvas, UI wiring, ?bench loading
+    ├── global.css          # Page-level layout and resets
     ├── physics/
     │   ├── kernels.ts          # Pure acceleration functions + integrator steps
     │   ├── BruteForceEngine.ts # O(N^2) direct sum, main thread
@@ -151,19 +174,31 @@ Performance numbers are measured, not estimated. The app ships its own harness: 
     │   ├── WebGPUEngine.ts     # GPU compute + render pipeline
     │   ├── shaders.wgsl        # Naive + workgroup-tiled force kernels
     │   ├── energy.ts           # Analytic potentials + the chunked EnergyMonitor
-    │   └── types.ts            # EngineType, engine caps, engine interfaces
+    │   └── types.ts            # EngineType, engine caps, engine + params interfaces
     ├── rendering/
     │   ├── Camera.ts
     │   └── CanvasRenderer.ts   # Reads shared state; colour-batched, DPR-aware
     ├── state/
-    │   └── SimulationManager.ts # Engine selection, fixed-dt loop, seeding
+    │   ├── SimulationManager.ts # Engine selection, fixed-dt loop, seeding
+    │   ├── enginePresets.ts     # Per-engine theta, softening and timestep defaults
+    │   ├── params.ts            # SimulationParams: physics, preset and UI state
+    │   └── ic/
+    │       ├── common.ts        # Shared IC helpers: halo accel, Salpeter sampler, radii
+    │       ├── GalaxyDisk.ts    # Self-gravitating disk: measured rotation curve, Toomre Q
+    │       └── AccretionDisk.ts # Keplerian test-particle disk about a pinned SMBH
     ├── ui/
     │   ├── UIController.ts
     │   ├── InteractionController.ts
-    │   ├── EnergyPanel.ts       # Collapsible dE/E0 plot
+    │   ├── TopBar.ts           # Brand, telemetry readouts, sidebar toggle, About button
+    │   ├── Sidebar.ts          # Preset, engine, physics and session controls; a sheet when narrow
+    │   ├── AboutPanel.ts       # Slide-over with the background reading (KaTeX)
+    │   ├── EnergyPanel.ts      # Collapsible dE/E0 plot
+    │   ├── slider.ts           # Log-scaled star-count slider mapping
+    │   ├── icons.ts            # Inlined Lucide SVGs
+    │   ├── tokens.css          # Colour, spacing and type tokens
     │   └── ui.css
     ├── bench/
-    │   └── benchmark.ts        # ?bench=1 sweep (dynamic import; off the main bundle)
+    │   └── benchmark.ts        # ?bench sweep (dynamic import; off the main bundle)
     └── utils/                  # dom, rng, permalink, format, colour helpers
 ```
 
@@ -178,6 +213,7 @@ graph TD
 
     A[User Interface Views]:::ui --> B[Interaction & UI Controllers]:::ui
     B -->|Commands & Parameters| C[Simulation Manager]:::core
+    Q[Initial conditions<br/>GalaxyDisk / AccretionDisk]:::core --> C
 
     C -->|brute| D[Brute Force Engine<br/>main thread]:::physics
     C -->|barnes| E[Barnes-Hut Engine<br/>main thread]:::physics
@@ -199,45 +235,68 @@ graph TD
     G -->|self-rendering: owns its canvas,<br/>state never leaves the GPU| P[WebGPU Canvas]:::render
 ```
 
-The three `shared-state` engines mutate one `PhysicsState` that `CanvasRenderer` reads directly - for the worker, that state lives in the `SharedArrayBuffer` both threads map, so rendering worker output costs no copy. The WebGPU engine is `self-rendering`: it owns its own canvas and never reads particle data back to the CPU.
+**How the engines get drawn.** The three CPU engines all write to one shared `PhysicsState`, and `CanvasRenderer` draws straight from it. For the Worker engine, that state lives in a `SharedArrayBuffer` that both threads can see, so drawing the worker's output needs no copying. The WebGPU engine works differently: it draws to its own canvas, and the star data never leaves the GPU.
 
 ## Key Decisions
 
-| Technology / Pattern | Decision Rationale |
+| Decision | Why |
 | :--- | :--- |
-| **WebGPU Compute Shaders** | Selected over WebGL for compute due to native storage-buffer and compute-pipeline support, enabling heavily parallelised $O(N^2)$ gravity kernels. |
-| **Workgroup-Tiled GPU Kernel** | The default kernel stages 64 sources per tile into workgroup memory, so each body's force sum reads shared memory instead of global. The naive kernel is kept and ships alongside it - the bench harness runs both and checks they agree numerically, which makes the optimisation falsifiable rather than assumed. |
-| **SharedArrayBuffer IPC** | Used for the dedicated **Worker engine**, which runs Barnes-Hut off the main thread, to bypass memory-copy overhead when sharing hundreds of thousands of coordinates between threads. Brute Force and main-thread Barnes-Hut do not use it. |
-| **One Shared Force Kernel** | Brute Force deliberately computes each $i$-$j$ pair twice rather than exploiting Newton's Third Law to halve the work. The $2\times$ arithmetic buys one identical, analytically tested force law (`pairwiseAccel`) across the CPU engines - so a Barnes-Hut result can be diffed against brute force and the *only* difference is the tree approximation. |
-| **Ping-Pong Buffering (GPU)** | Ensures race-condition-free reads/writes inside the shader. The vertex shader parses the output buffer directly, avoiding transfers back to CPU RAM. |
-| **Leapfrog Integrator** | Chosen over Euler and Runge-Kutta. Crucial for long-term symplectic energy conservation across thousands of orbital periods. |
-| **Energy over the Active Subsystem** | The $\Delta E/E_0$ panel measures the active set in its static external potentials, not the whole system. One-way active→passive coupling is not derivable from a Hamiltonian, so total-system energy is non-conserved *by construction* - reporting it would be measuring an artefact of the optimisation. |
+| **WebGPU instead of WebGL** | WebGPU has proper compute shaders and storage buffers. WebGL was built for drawing, not general calculation, so the parallel gravity calculation fits WebGPU much better. |
+| **Tiled GPU kernel** | The default GPU kernel loads stars in batches of 64 into fast on-chip memory that a group of threads shares, instead of each thread fetching every star from slower main GPU memory. The simple (naive) kernel still ships alongside it, and the benchmark checks that both give the same results, so the speed-up is verified rather than assumed. |
+| **Shared memory for the Worker engine** | The worker runs Barnes-Hut on a background thread. Sharing one block of memory (`SharedArrayBuffer`) with the page avoids copying every star's position between threads on every frame. Only the Worker engine uses it. |
+| **One force function for all CPU engines** | Brute force calculates each pair of stars twice instead of using Newton's third law to halve the work. That costs 2× the arithmetic, but every CPU engine then uses the same tested force function (`pairwiseAccel`). As a result, any difference between Barnes-Hut and brute force can only come from Barnes-Hut's approximation. |
+| **Active stars chosen by position in the list** | Every engine treats stars `[start, activeCount)` as the gravity sources, set once by the preset. Choosing them by mass instead would let engines disagree. That bug really happened once, and it's described in [Challenges](#challenges--lessons). |
+| **Two GPU buffers, swapped each step** | The shader reads from one buffer and writes to the other, so no thread ever reads a value another thread is overwriting. The drawing code reads the output buffer directly on the GPU, with no copy back to the CPU. |
+| **Leapfrog integrator** | Picked over Euler and Runge-Kutta because it keeps energy stable over thousands of orbits, where those methods slowly drift. |
+| **Energy panel measures only the active stars** | Passive stars feel gravity but don't produce it. That one-way pull saves a lot of work, but it means the energy of the whole system is not expected to stay constant, so measuring it would only show a side effect of the shortcut. The active stars on their own form a proper closed system, so their energy is the meaningful thing to track. |
 
 ## Challenges & Lessons
 
-- **Lock-free thread synchronisation.** Coordinating the physics worker with `Atomics.wait`/`Atomics.notify` over a single status flag taught me that the hard part isn't the handshake - it's the accounting around it. If the worker is still busy when a frame arrives, the step request is *dropped*, so simulated time may only be debited by steps that actually completed, or the clock silently runs fast. Rendering is gated on the same flag, holding the last completed frame while a step is in flight, so the main thread never evaluates a half-drawn coordinate map. Getting the ordering wrong - arming the next step before painting the last one - froze the canvas while every counter reported healthy progress.
-- **Garbage collection in the hot path.** Rebuilding the Barnes-Hut QuadTree every frame exposed severe GC pressure. I solved it with an object pool inside the QuadTree that recycles nodes rather than reallocating them, and by making the force kernels write into a caller-owned accumulator instead of returning a fresh object per call.
-- **Modern hardware graphics APIs.** Converting math loops into WGSL taught me that GPU branches are about *divergence*, not branch prediction. The tiled kernel cannot early-return on out-of-range threads: they must still reach every `workgroupBarrier`, so validity is carried as a flag and applied at the store instead. The classic tiled-N-body trap is a barrier some threads never arrive at.
+### Keeping two threads in step
+
+The Worker engine coordinates the page and the background thread with `Atomics.wait` and `Atomics.notify` on a single shared status flag.
+
+- **The hard part wasn't the handshake, it was the bookkeeping.** If the worker is still busy when a new frame arrives, that frame's step is skipped. The simulation clock may only advance for steps that actually finished, or it quietly runs too fast.
+- **The order of operations matters.** Drawing waits on the same flag, so the page never draws half-updated positions. When I started the next step before drawing the last one, the canvas froze, while every counter still reported normal progress.
+
+### Garbage collection slowing every frame
+
+Barnes-Hut rebuilds its tree every frame, and creating thousands of new objects each time made the browser's garbage collector pause constantly. I fixed it in two ways:
+
+- The tree reuses its nodes from a pool instead of creating new ones.
+- The force functions write into an object the caller passes in, instead of returning a new object on every call.
+
+### Learning to think like a GPU
+
+On a GPU, groups of threads run in lockstep, so an `if` that sends threads different ways makes them wait for each other. The tiled kernel also has sync points (`workgroupBarrier`) that every thread in the group must reach. As a result, a thread with no star to process can't simply exit early. It carries a "valid" flag and runs to the end with everyone else. The classic bug in tiled N-body code is a barrier that some threads never reach.
+
+### Four engines that quietly disagreed
+
+- **The bug.** Brute force and the GPU chose gravity sources by their position in the list. Barnes-Hut chose them by mass, keeping stars above a threshold.
+- **Why it hid.** In the accretion preset, stars are sorted by mass, so both rules picked the same stars. In the galaxy preset every disk star has the same mass, so Barnes-Hut counted far more of them as sources. It simulated a disk 3.3× heavier than the one the starting conditions were balanced for, and its energy drift was 100,000 times worse than brute force.
+- **Why the tests missed it.** Every galaxy test used so few stars that all of them were active, so the two rules never differed.
+- **How it was found and fixed.** A test comparing Barnes-Hut (with approximation off) against brute force, with the active/passive split switched on, exposed it in one step. That comparison is now a permanent test, and every engine reads the same `activeCount` value.
+- **The lesson.** When several engines must agree on a rule, give them one shared value to read rather than letting each one re-implement the rule.
 
 ## Reproducibility
 
-Every realization is derived from a seed, so any run can be shared and reproduced.
+Every simulation is built from a random seed, so any run can be shared and rebuilt exactly.
 
-**Permalink format** - `sim.html#s=<seed>&n=<count>&e=<engine>&p=<preset>&g=<gravity>&dm=<dmStrength>`
+**Link format:** `/#s=<seed>&n=<count>&e=<engine>&p=<preset>&g=<gravity>&dm=<dmStrength>`
 
-The **Share** button encodes the running simulation's seed and parameters and copies the URL. Every field is validated independently on load: a malformed or out-of-range value is dropped rather than defaulted, so a mangled link degrades to defaults instead of failing to boot.
+The **Share** button copies a link containing the current seed and settings. Each setting in the link is checked on its own when the page loads. An invalid value is ignored and that setting uses its default, so a damaged link still loads.
 
-**Seed semantics.** A seed reproduces **initial conditions at $t = 0$**, not mid-run state. The link reproduces the galaxy you started with, not the frame you were looking at when you copied it. A plain *Restart* deliberately draws a fresh seed - a new galaxy - while a permalink stays pinned to its own.
+**What a seed reproduces.** A seed rebuilds the *starting* galaxy, not the moment you were watching when you copied the link. Pressing *Restart* picks a new seed and a new galaxy. A share link always keeps its own seed.
 
-**Float caveat.** Reproduction is bit-exact on the same browser and hardware. Across platforms, differences in floating-point evaluation can diverge at the ULP level, which chaotic N-body dynamics will eventually amplify into a visibly different realization. This is documented rather than fought.
+**Across different machines.** On the same browser and hardware, results match bit for bit. Different hardware can round numbers very slightly differently. Because gravity simulations are chaotic, those tiny differences eventually grow into a visibly different galaxy. That's a property of the physics, and this README documents it rather than working around it.
 
 ## Getting Started
 
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 24 (the version CI uses) and [pnpm](https://pnpm.io/).
-- **A WebGPU-capable browser is optional.** Without one (or without a working device), the simulation falls back to the CPU engines automatically.
-- **Cross-origin isolation is required only for the Worker engine**, which needs `SharedArrayBuffer`. Vite sends the necessary COOP/COEP headers in both `dev` and `preview`, and the hosted demo provides them via `coi-serviceworker`. Every other engine runs on a page served with no special headers at all.
+- **A WebGPU-capable browser is optional.** Without one, the simulation falls back to the CPU engines automatically.
+- **Only the Worker engine needs cross-origin isolation**, because `SharedArrayBuffer` requires it. Vite sends the needed COOP/COEP headers in both `dev` and `preview`, and the hosted demo adds them through `coi-serviceworker`. Every other engine works without them.
 
 ### Installation
 
@@ -262,9 +321,7 @@ The **Share** button encodes the running simulation's seed and parameters and co
 
 ## Usage
 
-Navigate to the local development server URL (usually `http://localhost:5173`). Have a look at the introductory learning resources on the landing page, and then click **LAUNCH** to open the simulation.
-
-Append `?bench=1` to `sim.html` to load the benchmark overlay.
+Open the local server URL (usually `http://localhost:5173`). The simulation starts straight away. The info button in the top bar opens the About panel, which explains the physics. Add `?bench` to the URL to open the benchmark.
 
 ### CLI Commands
 
@@ -281,6 +338,6 @@ Append `?bench=1` to `sim.html` to load the benchmark overlay.
 
 ---
 
-## License
+## Licence
 
 MIT. See [LICENSE](./LICENSE).
