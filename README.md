@@ -8,7 +8,6 @@
 </p>
 
 [![Test](https://github.com/sahmed0/galaxy-n-body-simulation/actions/workflows/test.yml/badge.svg)](https://github.com/sahmed0/galaxy-n-body-simulation/actions/workflows/test.yml)
-![Copyright](https://img.shields.io/badge/Copyright-2026_Sajid_Ahmed-limegreen.svg)
 ![Vite](https://img.shields.io/badge/Vite-8.0.16-purple.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-blue.svg)
 ![Engine](https://img.shields.io/badge/Engine-WebGPU-crimson.svg)
@@ -234,9 +233,6 @@ The **Share** button encodes the running simulation's seed and parameters and co
 
 ## Getting Started
 
-- If you wish to install and use this repository locally, follow the instructions below:
-- **NOTE**: As per the Licence, you may only fork/clone this repository for personal usage and review purposes only, all commercial usage and unauthorised distribution is strictly prohibited.
-
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) 24 (the version CI uses) and [pnpm](https://pnpm.io/).
@@ -287,15 +283,4 @@ Append `?bench=1` to `sim.html` to load the benchmark overlay.
 
 ## License
 
-![Copyright](https://img.shields.io/badge/Copyright-2026_Sajid_Ahmed-brightgreen.svg)
-
-Copyright (c) 2026 Sajid Ahmed. **All Rights Reserved.**
-
-This repository is a **Proprietary Project**.
-
-While I am a strong supporter of Open Source Software, this specific codebase represents a significant personal investment of time and effort and is therefore provided with the following restrictions:
-
-- **Permitted:** Viewing, forking (within GitHub only), and local execution for evaluation and personal, non-commercial usage only.
-- **Prohibited:** Modification, redistribution, commercial use, and AI/LLM training.
-
-For the full legal terms, please see the [LICENSE](./LICENSE) file.
+MIT. See [LICENSE](./LICENSE).
