@@ -98,10 +98,12 @@ describe('engine source-selection parity (galaxy split)', () => {
             }
             return worst;
         }
-        // Brute force kicks each passive tracer once per source straight into the float32
-        // velocity, so it rounds more than the tree, which sums in float64 and kicks once.
-        // Measured ≈ 6.0e-4 (brute) and 4.3e-5 (tree); frozen with ~2.5x and ~2.3x margin.
-        expect(maxRelError(brute)).toBeLessThan(1.5e-3);
+        // Both engines sum each force term in float64 and kick once per term. The remaining
+        // error is float32 velocity storage: the kick is read back as a difference of
+        // float32 velocities, whose rounding is large next to a single step's dv.
+        // Measured ≈ 4.3e-5 for both; frozen with ~2.3x margin. Kicking the passive
+        // tracers once per source into float32 measured ≈ 6.0e-4 and fails this bound.
+        expect(maxRelError(brute)).toBeLessThan(1e-4);
         expect(maxRelError(tree)).toBeLessThan(1e-4);
 
         // One active and one passive receiver, as magnitude ratios. A tree that picked

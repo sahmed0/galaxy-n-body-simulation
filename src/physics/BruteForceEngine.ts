@@ -21,6 +21,14 @@ export class BruteForceEngine implements SharedStateEngine {
     // nothing in steady state. Safe: each engine steps single-threaded, one call at a time.
     private scratchAccel: Accel = { ax: 0, ay: 0 };
 
+    // Reused source buffers for the heavy -> light sum: index 0 holds the passive
+    // receiver (mass 0, never summed - pairwiseAccel skips j===i), indices 1.. hold the
+    // active sources, so passive bodies go through the same kernel as every other pair.
+    // Float64 so the copy from the float32 state is exact. Grown, never shrunk.
+    private passiveX = new Float64Array(0);
+    private passiveY = new Float64Array(0);
+    private passiveM = new Float64Array(0);
+
     // Exact pairwise-interaction count evaluated by the most recent step, for telemetry.
     private lastInteractionCount = 0;
 
@@ -132,24 +140,29 @@ export class BruteForceEngine implements SharedStateEngine {
             }
         }
 
-        // 2. Heavy -> Light interactions (One-way Gravity)
-        if (params.useActivePassive && activeCount < n) {
-            for (let i = start; i < activeCount; i++) {
-                const mi = mass[i];
-                const pix = px[i];
-                const piy = py[i];
-
-                for (let j = activeCount; j < n; j++) {
-                    const dx = px[j] - pix;
-                    const dy = py[j] - piy;
-                    const distSq = dx * dx + dy * dy + softeningSq;
-                    const dist = Math.sqrt(distSq);
-
-                    // Light particle j is attracted by Heavy particle i
-                    const aj = (G * mi * dt) / (distSq * dist);
-                    vx[j] -= aj * dx;
-                    vy[j] -= aj * dy;
-                }
+        // 2. Heavy -> Light interactions (one-way gravity). Each passive body sums the
+        // active sources through the shared pairwise kernel, with itself in slot 0 of
+        // the scratch buffers, and gets a single kick. Passive bodies are never sources.
+        // Positions stay fixed until the drift, so the sources are copied once per step.
+        if (params.useActivePassive && activeCount < n && hn > 0) {
+            if (this.passiveX.length < hn + 1) {
+                this.passiveX = new Float64Array(hn + 1);
+                this.passiveY = new Float64Array(hn + 1);
+                this.passiveM = new Float64Array(hn + 1);
+            }
+            const sx = this.passiveX;
+            const sy = this.passiveY;
+            const sm = this.passiveM;
+            sx.set(px.subarray(start, activeCount), 1);
+            sy.set(py.subarray(start, activeCount), 1);
+            sm.set(mass.subarray(start, activeCount), 1);
+            sm[0] = 0;
+            const acc = this.scratchAccel;
+            for (let j = activeCount; j < n; j++) {
+                sx[0] = px[j];
+                sy[0] = py[j];
+                pairwiseAccel(sx, sy, sm, hn + 1, 0, G, softeningSq, acc);
+                applyKick(vx, vy, j, acc.ax, acc.ay, dt);
             }
         }
 
