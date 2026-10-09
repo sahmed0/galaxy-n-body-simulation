@@ -79,15 +79,35 @@
 .telemetry-value.tel-warning { color: var(--color-status-warning); }
 .telemetry-value.tel-critical { color: var(--color-status-critical); }
 
-/* Sidebar */
-.sidebar {
+/* Dock: the sidebar plus, in .dock-side, the energy panel and bench overlay. They are flex
+   items of one container, so they share its space instead of overlapping. By default (up to
+   1023px wide) it is one left column with the side panels under the controls; the
+   breakpoints at the end of this file turn it into a bottom sheet on phones and split it
+   into left and right columns on wide screens. */
+.dock {
   position: fixed;
   top: var(--chrome-offset);
   left: var(--chrome-margin);
   bottom: var(--chrome-margin);
   width: var(--sidebar-width);
-  box-sizing: border-box;
   z-index: 900;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  /* The dock's empty area must not block drags on the canvas; only its panels take input. */
+  pointer-events: none;
+}
+.dock > .sidebar,
+.dock-side > * { pointer-events: auto; }
+.dock-side { display: contents; }
+
+/* Sidebar */
+.sidebar {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -156,6 +176,7 @@
 .btn-primary { background: var(--color-accent); color: var(--color-accent-contrast); font-weight: 600; }
 .btn-primary:hover { filter: brightness(1.08); }
 .btn.is-paused { color: var(--color-status-warning); }
+.btn[aria-pressed="true"] { color: var(--color-accent); box-shadow: inset 0 0 0 1px var(--color-accent); }
 
 @media (max-width: 768px) {
   .topbar-brand,
@@ -163,10 +184,6 @@
   .telemetry-more-panel .interactions-row { display: flex; }
   .icon-btn { width: 40px; height: 40px; }
   .telemetry-more-toggle { width: 32px; height: 32px; }
-
-  .sidebar { top: auto; right: var(--chrome-margin); width: auto; max-height: 70vh; padding-top: var(--space-8); }
-  .sidebar.is-collapsed { transform: translateY(calc(100% + var(--chrome-margin))); }
-  .sidebar-close { display: inline-flex; }
 }
 
 /* Engine fallback / notice banner */
@@ -204,19 +221,15 @@
   color: var(--color-text-primary);
 }
 
-/* Benchmark overlay (?bench). Fixed, centred below the top bar on mobile, scrollable -
-   edge-anchored on wider screens via the media query below. */
+/* Benchmark overlay (?bench). Docked in .dock-side, so it stacks with the energy panel
+   and scrolls within whatever height the dock leaves it. */
 .bench-overlay {
-  position: fixed;
-  top: var(--chrome-offset);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 950;
+  flex: 0 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  width: min(92vw, 34rem);
-  max-height: calc(100vh - var(--chrome-offset) - var(--chrome-margin));
   overflow-y: auto;
   padding: 1rem;
   background: var(--color-panel);
@@ -270,33 +283,19 @@
   color: var(--color-text-secondary);
 }
 
-@media (min-width: 769px) {
-  .bench-overlay {
-    top: var(--chrome-offset);
-    left: auto;
-    right: var(--chrome-margin);
-    transform: none;
-  }
-}
-
-/* Energy panel (ΔE Panel toggle). Fixed and centred below the top bar on mobile, like the
-   bench overlay; anchored bottom-right on wider screens, clear of the sidebar at every
-   desktop width. Hidden by default. z-index 950 is the secondary-surface tier: above the
-   canvases and the sidebar (900) but below the top bar (1000) and the banner (2000), so
-   the panel can never occlude the controls that dismiss it. */
+/* Energy panel (Energy toggle). Docked in .dock-side and hidden by default. Its order puts
+   it under the controls in a single column and under the bench overlay in the right-hand
+   column; the phone breakpoint moves it above the controls. */
 .energy-panel {
   display: none;
-  position: fixed;
-  top: var(--chrome-offset);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 950;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: min(90vw, 22rem);
-  max-height: 80vh;
+  order: 2;
+  flex: 0 0 auto;
+  max-height: 60%;
   overflow-y: auto;
-  padding: 1rem;
+  box-sizing: border-box;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-panel);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-panel);
@@ -307,6 +306,25 @@
   display: flex;
 }
 
+.energy-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Pulls the close button into the panel's padding so its hit area does not inflate the header. */
+.energy-head .icon-btn {
+  margin: calc(-1 * var(--space-1)) calc(-1 * var(--space-2)) calc(-1 * var(--space-1)) 0;
+}
+
+.energy-delta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+
 .energy-plot-wrap {
   position: relative;
 }
@@ -314,31 +332,101 @@
 .energy-plot {
   display: block;
   width: 100%;
-  height: 8.75rem;
+  height: 6rem;
 }
 
 .energy-na {
   display: none;
   margin: 0;
-  height: 8.75rem;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
-.energy-na.energy-na-active {
+.energy-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.energy-stats div {
   display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
 }
 
-@media (min-width: 769px) {
-  .energy-panel {
+.energy-stats dd {
+  margin: 0;
+}
+
+/* GPU engine: no readback, so a one-line notice replaces the plot and the stats. */
+.energy-panel.is-gpu .energy-na {
+  display: block;
+}
+
+.energy-panel.is-gpu .energy-plot-wrap,
+.energy-panel.is-gpu .energy-stats {
+  display: none;
+}
+
+/* Phones in portrait: the dock becomes a bottom sheet capped at half the screen, so the
+   canvas always shows, with the energy panel above the controls. */
+@media (max-width: 768px) and (min-height: 501px) {
+  .dock {
     top: auto;
-    bottom: var(--chrome-margin);
-    left: auto;
     right: var(--chrome-margin);
-    transform: none;
+    width: auto;
+    max-height: 50vh;
+    max-height: 50dvh;
   }
+  .sidebar { flex: 0 1 auto; padding-top: var(--space-8); }
+  /* Out of the flow while closed, so the energy panel drops to the bottom as the sheet slides away. */
+  .sidebar.is-collapsed {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 50vh;
+    max-height: 50dvh;
+    transform: translateY(calc(100% + var(--chrome-margin)));
+  }
+  .sidebar-close { display: inline-flex; }
+  .energy-panel { order: -1; }
+  .energy-plot { height: 4rem; }
+}
+
+/* Short screens (landscape phones): a slimmer top bar and a narrower left column. */
+@media (max-height: 500px) {
+  :root {
+    --topbar-height: 44px;
+    --chrome-margin: 8px;
+    --sidebar-width: clamp(220px, 32vw, 280px);
+  }
+  .sidebar { gap: var(--space-4); padding: var(--space-4); }
+  .sidebar-section { gap: var(--space-3); }
+  .energy-plot { height: 3.25rem; }
+}
+
+/* Wide screens: the controls keep the left edge and the side panels get their own column
+   on the right. */
+@media (min-width: 1024px) and (min-height: 501px) {
+  .dock {
+    right: var(--chrome-margin);
+    width: auto;
+    flex-direction: row;
+    justify-content: space-between;
+  }
+  .sidebar { flex: 0 0 var(--sidebar-width); }
+  .dock-side {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: var(--space-2);
+    min-height: 0;
+  }
+  .energy-panel { width: 22rem; }
+  .bench-overlay { width: min(34rem, calc(100vw - var(--sidebar-width) - 4 * var(--chrome-margin))); }
 }
 
 /* About panel */

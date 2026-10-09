@@ -8,8 +8,11 @@ export interface SidebarOptions {
     onChange: (open: boolean) => void;
 }
 
-/** Below this width the sidebar is a bottom sheet, closed by default. */
-const MOBILE_QUERY = '(max-width: 768px)';
+/**
+ * Small screens, where the sidebar starts closed: phones in portrait (a bottom sheet) and
+ * short landscape screens (a narrow left column). Matches the breakpoints in ui.css.
+ */
+const MOBILE_QUERY = '(max-width: 768px), (max-height: 500px)';
 
 /**
  * The persistent (desktop) / bottom-sheet (mobile) controls panel. Owns only its own

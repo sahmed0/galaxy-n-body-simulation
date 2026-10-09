@@ -100,7 +100,8 @@ export function initBench(sim: SimulationManager): void {
         <textarea id="bench-output" class="bench-output" readonly
             placeholder="Results appear here as a GitHub-markdown table."></textarea>
     `;
-    document.body.appendChild(overlay);
+    // Docked beside the energy panel so the two stack instead of overlapping.
+    (document.getElementById('dock-side') ?? document.body).appendChild(overlay);
 
     const runBtn = overlay.querySelector<HTMLButtonElement>('#bench-run')!;
     const parityBtn = overlay.querySelector<HTMLButtonElement>('#bench-parity')!;

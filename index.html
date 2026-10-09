@@ -71,66 +71,69 @@
         </div>
     </header>
 
-    <aside id="control-island" class="sidebar no-transition">
-        <button id="sidebar-close" class="icon-btn sidebar-close" aria-label="Close controls"><span data-icon="x"></span></button>
+    <div id="dock" class="dock">
+        <aside id="control-island" class="sidebar no-transition">
+            <button id="sidebar-close" class="icon-btn sidebar-close" aria-label="Close controls"><span data-icon="x"></span></button>
 
-        <div class="sidebar-section">
-            <div class="sidebar-section-label">Engine</div>
-            <div class="field">
-                <label for="ui-engine">Physics Engine</label>
-                <div class="select-wrap">
-                    <select id="ui-engine" class="select">
-                        <option value="brute">CPU: Brute Force</option>
-                        <option value="barnes">CPU: Barnes-Hut</option>
-                        <option value="worker">CPU: Barnes-Hut (Worker)</option>
-                        <option value="webgpu">GPU: WebGPU</option>
-                    </select>
-                    <span class="select-chevron" data-icon="chevronDown"></span>
+            <div class="sidebar-section">
+                <div class="sidebar-section-label">Engine</div>
+                <div class="field">
+                    <label for="ui-engine">Physics Engine</label>
+                    <div class="select-wrap">
+                        <select id="ui-engine" class="select">
+                            <option value="brute">CPU: Brute Force</option>
+                            <option value="barnes">CPU: Barnes-Hut</option>
+                            <option value="worker">CPU: Barnes-Hut (Worker)</option>
+                            <option value="webgpu">GPU: WebGPU</option>
+                        </select>
+                        <span class="select-chevron" data-icon="chevronDown"></span>
+                    </div>
+                </div>
+                <div class="field" id="ui-quadtree-group" style="display:none;">
+                    <label class="checkbox-label"><input type="checkbox" id="ui-show-grid" class="checkbox" /> QuadTree</label>
+                </div>
+                <div class="field">
+                    <label for="ui-preset">Preset</label>
+                    <div class="select-wrap">
+                        <select id="ui-preset" class="select">
+                            <option value="galaxy">Galaxy (spiral)</option>
+                            <option value="accretion">Accretion Disk (SMBH)</option>
+                        </select>
+                        <span class="select-chevron" data-icon="chevronDown"></span>
+                    </div>
                 </div>
             </div>
-            <div class="field" id="ui-quadtree-group" style="display:none;">
-                <label class="checkbox-label"><input type="checkbox" id="ui-show-grid" class="checkbox" /> QuadTree</label>
-            </div>
-            <div class="field">
-                <label for="ui-preset">Preset</label>
-                <div class="select-wrap">
-                    <select id="ui-preset" class="select">
-                        <option value="galaxy">Galaxy (spiral)</option>
-                        <option value="accretion">Accretion Disk (SMBH)</option>
-                    </select>
-                    <span class="select-chevron" data-icon="chevronDown"></span>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-label">Physics</div>
+                <div class="field">
+                    <div class="field-row"><label for="ui-stars">Stars</label><span id="ui-stars-value" class="field-value">--</span></div>
+                    <input type="range" id="ui-stars" class="slider" min="0" max="1000" step="1" value="0" />
+                </div>
+                <div class="field">
+                    <div class="field-row"><label for="ui-gravity">Gravity</label><span id="ui-gravity-value" class="field-value">1.0</span></div>
+                    <input type="range" id="ui-gravity" class="slider" min="0.1" max="10.0" step="0.1" value="1.0" />
+                </div>
+                <div class="field">
+                    <div class="field-row"><label for="ui-dark-matter">Dark Matter</label><span id="ui-dark-matter-value" class="field-value">0</span></div>
+                    <input type="range" id="ui-dark-matter" class="slider" min="0.0" max="1000.0" step="10.0" value="0.0" />
                 </div>
             </div>
-        </div>
 
-        <div class="sidebar-section">
-            <div class="sidebar-section-label">Physics</div>
-            <div class="field">
-                <div class="field-row"><label for="ui-stars">Stars</label><span id="ui-stars-value" class="field-value">--</span></div>
-                <input type="range" id="ui-stars" class="slider" min="0" max="1000" step="1" value="0" />
+            <div class="sidebar-section">
+                <div class="sidebar-section-label">Session</div>
+                <div class="button-row">
+                    <button id="ui-pause" class="btn btn-secondary">Pause</button>
+                    <button id="ui-restart" class="btn btn-secondary">Restart</button>
+                </div>
+                <div class="button-row">
+                    <button id="ui-share" class="btn btn-primary">Share</button>
+                    <button id="ui-toggle-energy" class="btn btn-secondary" aria-pressed="false" aria-controls="energy-panel">Energy</button>
+                </div>
             </div>
-            <div class="field">
-                <div class="field-row"><label for="ui-gravity">Gravity</label><span id="ui-gravity-value" class="field-value">1.0</span></div>
-                <input type="range" id="ui-gravity" class="slider" min="0.1" max="10.0" step="0.1" value="1.0" />
-            </div>
-            <div class="field">
-                <div class="field-row"><label for="ui-dark-matter">Dark Matter</label><span id="ui-dark-matter-value" class="field-value">0</span></div>
-                <input type="range" id="ui-dark-matter" class="slider" min="0.0" max="1000.0" step="10.0" value="0.0" />
-            </div>
-        </div>
-
-        <div class="sidebar-section">
-            <div class="sidebar-section-label">Session</div>
-            <div class="button-row">
-                <button id="ui-pause" class="btn btn-secondary">Pause</button>
-                <button id="ui-restart" class="btn btn-secondary">Restart</button>
-            </div>
-            <div class="button-row">
-                <button id="ui-share" class="btn btn-primary">Share</button>
-                <button id="ui-toggle-energy" class="btn btn-secondary">Energy</button>
-            </div>
-        </div>
-    </aside>
+        </aside>
+        <div id="dock-side" class="dock-side"></div>
+    </div>
 
     <canvas id="bg-canvas"></canvas>
     <canvas id="sim-canvas"></canvas>

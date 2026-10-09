@@ -138,14 +138,16 @@ export function setupUI(sim: SimulationManager) {
 
     // The ΔE panel is optional: `elOrNull` (never `el`, which would throw past the
     // try/catch above and kill *all* UI wiring on a page without the button). No button
-    // means no panel - nothing else here touches it.
+    // means no panel - nothing else here touches it. The panel joins the dock beside the
+    // controls so the two are laid out together and can never overlap.
     const energyToggle = elOrNull<HTMLButtonElement>('ui-toggle-energy');
-    const energyPanel = energyToggle ? new EnergyPanel(sim) : null;
-    if (energyToggle && energyPanel) {
-        energyToggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            energyPanel.toggle();
-        });
+    if (energyToggle) {
+        const energyPanel = new EnergyPanel(
+            sim,
+            elOrNull<HTMLElement>('dock-side') ?? document.body,
+            (open) => energyToggle.setAttribute('aria-pressed', open.toString()),
+        );
+        energyToggle.addEventListener('click', () => energyPanel.toggle());
     }
 
     // Share is optional for the same reason as the ΔE panel above. Everything it reads
@@ -316,16 +318,6 @@ export function setupUI(sim: SimulationManager) {
 
     restartBtn.addEventListener('click', async () => {
         await sim.restart();
-    });
-
-    // Tapping outside the ΔE panel closes it on narrow screens, as before. On desktop it stays
-    // open while the user pans the canvas.
-    const narrow = window.matchMedia('(max-width: 768px)');
-    document.addEventListener('click', (e) => {
-        const target = e.target as Node;
-        if (!narrow.matches || !energyPanel) return;
-        if (energyToggle?.contains(target) || energyPanel.root.contains(target)) return;
-        energyPanel.close();
     });
 }
 

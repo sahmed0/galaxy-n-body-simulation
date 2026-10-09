@@ -2,6 +2,7 @@
  * Copyright (c) 2026 Sajid Ahmed
  */
 import type { SimulationManager } from '../state';
+import { mountIcons } from './icons';
 
 /** Redraw cadence while open. Samples land at ≤1/s, so most ticks are a no-op compare. */
 const UPDATE_INTERVAL_MS = 250;
@@ -18,7 +19,8 @@ const PLOT_PADDING = 6;
  * checked. Plots the fractional energy drift of the active subsystem against the
  * baseline E₀, plus net momentum and a sample count.
  *
- * Ownership: the panel owns only its visibility and its redraw timer. The *schedule*
+ * Ownership: the panel owns only its visibility and its redraw timer. Where it sits is
+ * decided by the container it is mounted into (the dock) and the stylesheet. The *schedule*
  * of the underlying measurement belongs to {@link SimulationManager}; opening the
  * panel just sets `sim.energyEnabled`, which is what makes a closed panel free.
  *
@@ -33,7 +35,6 @@ export class EnergyPanel {
 
     private readonly plot: HTMLCanvasElement;
     private readonly ctx: CanvasRenderingContext2D | null;
-    private readonly naEl: HTMLElement;
     private readonly deltaEl: HTMLElement;
     private readonly e0El: HTMLElement;
     private readonly pxEl: HTMLElement;
@@ -41,7 +42,8 @@ export class EnergyPanel {
     private readonly countEl: HTMLElement;
 
     private readonly sim: SimulationManager;
-    private readonly onResize: () => void;
+    private readonly onChange: (open: boolean) => void;
+    private readonly resizeObserver: ResizeObserver;
     private timer: number | null = null;
     private open_ = false;
     private lastRevision = -1;
@@ -51,34 +53,44 @@ export class EnergyPanel {
     private cssH = 0;
 
     /**
-     * Builds the panel and mounts it (hidden) on `document.body`.
+     * Builds the panel and mounts it (hidden) in `parent`.
      * @param sim - The manager to measure. Stored only; nothing is read from it here.
+     * @param parent - The container the panel is appended to.
+     * @param onChange - Called with the new state whenever the panel opens or closes,
+     *   including through its own close button.
      */
-    constructor(sim: SimulationManager) {
+    constructor(sim: SimulationManager, parent: HTMLElement, onChange: (open: boolean) => void = () => { }) {
         this.sim = sim;
+        this.onChange = onChange;
 
-        const root = document.createElement('div');
+        const root = document.createElement('section');
         root.id = 'energy-panel';
         root.className = 'energy-panel';
+        root.setAttribute('aria-labelledby', 'energy-title');
         root.innerHTML = `
-            <h2 class="energy-title">Energy conservation</h2>
+            <div class="energy-head">
+                <h2 id="energy-title" class="energy-title">Energy</h2>
+                <span class="energy-delta"><span class="telemetry-label">ΔE/E₀</span><span id="energy-delta" class="telemetry-value">-</span></span>
+                <button id="energy-close" class="icon-btn" aria-label="Close energy panel"><span data-icon="x"></span></button>
+            </div>
             <div class="energy-plot-wrap">
                 <canvas id="energy-plot" class="energy-plot"></canvas>
-                <p id="energy-na" class="energy-na">N/A - particle state resides on GPU</p>
             </div>
-            <div class="telemetry-row"><span class="telemetry-label">ΔE/E₀</span><span id="energy-delta" class="telemetry-value">-</span></div>
-            <div class="telemetry-row"><span class="telemetry-label">E₀</span><span id="energy-e0" class="telemetry-value">-</span></div>
-            <div class="telemetry-row"><span class="telemetry-label">Σpₓ</span><span id="energy-px" class="telemetry-value">-</span></div>
-            <div class="telemetry-row"><span class="telemetry-label">Σp_y</span><span id="energy-py" class="telemetry-value">-</span></div>
-            <div class="telemetry-row"><span class="telemetry-label">Samples</span><span id="energy-count" class="telemetry-value">0</span></div>
+            <p id="energy-na" class="energy-na">N/A - particle state resides on GPU</p>
+            <dl class="energy-stats">
+                <div><dt class="telemetry-label">E₀</dt><dd id="energy-e0" class="telemetry-value">-</dd></div>
+                <div><dt class="telemetry-label">Samples</dt><dd id="energy-count" class="telemetry-value">0</dd></div>
+                <div><dt class="telemetry-label">Σpₓ</dt><dd id="energy-px" class="telemetry-value">-</dd></div>
+                <div><dt class="telemetry-label">Σp_y</dt><dd id="energy-py" class="telemetry-value">-</dd></div>
+            </dl>
         `;
-        document.body.appendChild(root);
+        mountIcons(root);
+        parent.appendChild(root);
         this.root = root;
 
         // Every `!` below is provably safe: the literal template above is the only source
         // of this subtree, and each id appears in it.
         this.plot = root.querySelector<HTMLCanvasElement>('#energy-plot')!;
-        this.naEl = root.querySelector<HTMLElement>('#energy-na')!;
         this.deltaEl = root.querySelector<HTMLElement>('#energy-delta')!;
         this.e0El = root.querySelector<HTMLElement>('#energy-e0')!;
         this.pxEl = root.querySelector<HTMLElement>('#energy-px')!;
@@ -86,12 +98,17 @@ export class EnergyPanel {
         this.countEl = root.querySelector<HTMLElement>('#energy-count')!;
         this.ctx = this.plot.getContext('2d');
 
-        this.onResize = () => {
+        root.querySelector<HTMLButtonElement>('#energy-close')!.addEventListener('click', () => this.close());
+
+        // The plot's box changes with the viewport and with the dock's layout (the controls
+        // collapsing, a breakpoint moving the panel to another column), not only on window
+        // resize, so its own size is what gets observed.
+        this.resizeObserver = new ResizeObserver(() => {
             if (!this.open_) return;
             this.resizePlot();
             this.draw();
-        };
-        window.addEventListener('resize', this.onResize);
+        });
+        this.resizeObserver.observe(this.plot);
     }
 
     /** Whether the panel is currently shown. */
@@ -111,6 +128,7 @@ export class EnergyPanel {
         this.resizePlot();
         this.draw();
         this.timer = window.setInterval(() => this.update(), UPDATE_INTERVAL_MS);
+        this.onChange(true);
     }
 
     /** Hides the panel and stops measuring (the manager drops any in-flight cycle). */
@@ -123,6 +141,7 @@ export class EnergyPanel {
             clearInterval(this.timer);
             this.timer = null;
         }
+        this.onChange(false);
     }
 
     /** Toggles the panel's visibility. */
@@ -143,10 +162,10 @@ export class EnergyPanel {
         this.draw();
     }
 
-    /** Removes the panel from the DOM and releases its timer and listeners. */
+    /** Removes the panel from the DOM and releases its timer and observer. */
     dispose(): void {
         this.close();
-        window.removeEventListener('resize', this.onResize);
+        this.resizeObserver.disconnect();
         this.root.remove();
     }
 
@@ -174,11 +193,12 @@ export class EnergyPanel {
         this.lastGpu = gpu;
         this.lastRevision = this.sim.energyMonitor.revision;
 
+        // The stylesheet swaps the plot and stats for the one-line N/A notice.
+        this.root.classList.toggle('is-gpu', gpu);
+
         if (gpu) {
             // No readback exists for the GPU engine, so the monitor is idle. Leaving the
-            // last CPU numbers on screen under an "N/A" plot would read as live data.
-            this.plot.style.display = 'none';
-            this.naEl.classList.add('energy-na-active');
+            // last CPU numbers on screen under an "N/A" notice would read as live data.
             this.deltaEl.textContent = '-';
             this.e0El.textContent = '-';
             this.pxEl.textContent = '-';
@@ -186,9 +206,6 @@ export class EnergyPanel {
             this.countEl.textContent = '0';
             return;
         }
-
-        this.plot.style.display = '';
-        this.naEl.classList.remove('energy-na-active');
 
         const m = this.sim.energyMonitor;
         const e0 = m.baselineEnergy();
