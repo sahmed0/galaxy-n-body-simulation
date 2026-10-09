@@ -4,6 +4,7 @@
 import { SimulationManager, presetDmDefault } from './state';
 import { setupUI, updateTelemetry, setupInteractions } from './ui';
 import { parsePermalink, randomUint32 } from './utils';
+import { Starfield } from './rendering';
 import { TopBar } from './ui/TopBar';
 import { Sidebar } from './ui/Sidebar';
 import { AboutPanel } from './ui/AboutPanel';
@@ -16,36 +17,6 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@kiwicarbon/assets/dist/kiwi.css';
-
-/**
- * Draws a static deep space background with pinpoint stars on the bg-canvas.
- */
-function drawSpaceBackground() {
-  const bgCanvas = document.getElementById('bg-canvas') as HTMLCanvasElement;
-  if (!bgCanvas) return;
-  const ctx = bgCanvas.getContext('2d');
-  if (!ctx) return;
-
-  // Deliberately drawn at 1x device pixels (no DPR scaling): this is a blurred, static
-  // starfield backdrop where per-pixel crispness is imperceptible and the extra fill cost isn't worth it.
-  const width = window.innerWidth * 1.2;
-  const height = window.innerHeight * 1.2;
-  bgCanvas.width = width;
-  bgCanvas.height = height;
-
-  ctx.fillStyle = '#000000ff';
-  ctx.fillRect(0, 0, width, height);
-
-  const numStars = 1000 + Math.random() * 1500;
-  for (let i = 0; i < numStars; i++) {
-    const x = Math.random() * width;
-    const y = Math.random() * height;
-    const size = Math.random() > 0.95 ? 2 : 1; // Make 2x2 much rarer
-    const opacity = 0.05 + Math.random() * 0.55; // 0.05 to 0.6
-    ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-    ctx.fillRect(x, y, size, size);
-  }
-}
 
 // Cross-Origin Isolation enables zero-copy SharedArrayBuffer, which the worker engine needs.
 // The app runs fine without it: PhysicsMemory falls back to a plain ArrayBuffer and the worker
@@ -62,9 +33,6 @@ async function startApp() {
   const about = new AboutPanel();
   const topBar = new TopBar({ onToggleSidebar: () => sidebar.toggle(), onAbout: () => about.toggle() });
   const sidebar = new Sidebar({ onChange: (open) => topBar.setSidebarExpanded(open) });
-
-  drawSpaceBackground();
-  window.addEventListener('resize', drawSpaceBackground);
 
   const simManager = new SimulationManager();
 
@@ -94,21 +62,12 @@ async function startApp() {
   // Set telemetry callback before init so it's ready, but it's used in loop
   simManager.onTelemetry = updateTelemetry;
 
-  // Parallax the background canvas against the camera each frame. Kept in the entry
-  // layer (not SimulationManager) so the state layer never touches the DOM.
-  const bgCanvas = document.getElementById('bg-canvas');
+  // Parallax the starfield against the camera each frame. Kept in the entry layer
+  // (not SimulationManager) so the state layer never touches the DOM.
+  const bgCanvas = document.getElementById('bg-canvas') as HTMLCanvasElement | null;
   if (bgCanvas) {
-    simManager.onFrame = (sim) => {
-      const camera = sim.renderer.camera;
-      const pPanFactor = 0.05;
-      const pZoomFactor = 0.15;
-      let bgScale = 1.0 + (camera.zoom - 1.0) * pZoomFactor;
-      if (bgScale < 0.83) bgScale = 0.83;
-
-      const bgX = camera.x * pPanFactor;
-      const bgY = camera.y * camera.tilt * pPanFactor;
-      bgCanvas.style.transform = `translate(${bgX}px, ${bgY}px) scale(${bgScale})`;
-    };
+    const starfield = new Starfield(bgCanvas);
+    simManager.onFrame = (sim) => starfield.update(sim.renderer.camera);
   }
 
   await simManager.init(CANVAS_ID);

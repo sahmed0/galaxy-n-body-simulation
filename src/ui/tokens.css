@@ -1,8 +1,8 @@
 /* Copyright (c) 2026 Sajid Ahmed */
 :root {
   /* Surfaces */
-  /* Page behind the starfield canvas. Matches its black fill so the edges the parallax
-     uncovers when zoomed out stay invisible. */
+  /* Page behind the starfield canvas. Matches its black fill so nothing flashes before
+     the first frame is drawn. */
   --color-page: #000000;
   --color-bg: #101114;
   --color-bg-canvas: #08090b;
