@@ -1,2 +1,6 @@
 allowBuilds:
   esbuild: true
+
+updateConfig:
+  ignoreDependencies:
+    - typescript
