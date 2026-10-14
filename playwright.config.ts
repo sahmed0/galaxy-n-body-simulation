@@ -14,10 +14,10 @@ export default defineConfig({
     testDir: './e2e',
     // Boot can involve a service-worker reload and physics warm-up; keep steps patient.
     timeout: 60_000,
-    fullyParallel: false,
+    fullyParallel: true,
     forbidOnly: !!process.env.CI,
-    retries: process.env.CI ? 1 : 0,
-    workers: 1,
+    retries: process.env.CI ? 2 : 0,
+    workers: process.env.CI ? 2 : '50%',
     reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',
     use: {
         baseURL: 'http://localhost:4173',
